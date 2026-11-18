@@ -12,6 +12,7 @@ The MathType Word ribbon exposes more commands than the deterministic render wor
 | Insert Equation Number | Render pipeline | Supported through `MTCommand_InsertEqnNum`, then normalized to `(n)`. |
 | Insert Equation Reference | Manifest reference | Supported through `MTCommand_InsertEqnRef` and `MTPlaceRef`. |
 | Update Equation Numbers | `update_mathtype_word_fields` | Supported; update then validate. |
+| Insert Next Equation Chapter / Section | Verified opt-in native-numbering test | `MTCommand_InsertNextChapter` / `MTCommand_InsertNextSection`; see [native numbering](numbering-and-references.md#verified-chapter-and-section-test). The general renderer still enforces simple numbers. |
 | Toggle TeX | Render pipeline | Supported for one-line MathType-compatible TeX. |
 | Format Equation Numbers | Packaged/default profile and field normalization | Supported for processed documents. Do not drive the localized dialog with simulated keystrokes. |
 | Previous/Next Equation browsing | Word UI only | Read/navigation action. Use only in an interactive session when the user asks to inspect equations manually. |

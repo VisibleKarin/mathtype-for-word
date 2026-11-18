@@ -171,10 +171,10 @@ Treat any of these as a failed deliverable:
 - Missing `Equation.DSMT4` objects.
 - Any Word built-in `OMath` object when the requested equations must all be MathType.
 - A numbered equation without `MACROBUTTON MTPlaceRef`, hidden/current `SEQ MTEqn`, or parentheses.
-- A current `MTSec` or `MTChap` component in a number.
+- A current `MTSec` or `MTChap` component when the legacy simple-number renderer was requested. These components are legitimate for MathType chapter/section numbering.
 - A reference without `GOTOBUTTON`, nested `REF`, or a live `ZEqnNum...` bookmark.
 - Remaining `{{MATH:...}}`, `{{EQREF:...}}`, or `equation reference goes here` text.
-- Non-sequential equation values starting from 1.
+- Non-sequential equation values starting from 1 in the legacy simple-number mode. Chapter/section numbering restarts according to its native breaks.
 - `Error! Reference source not found.`
 - A manifest equation whose MathType object holds untranslated TeX (red text) or an unmapped symbol (a diamond).
 

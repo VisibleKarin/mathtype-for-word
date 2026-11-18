@@ -1,5 +1,19 @@
 # Test report
 
+## Native MathType numbering chapter and section test
+
+Date: 2026-11-18. Word 16.0 / MathType 7.8.2.441; hidden Office sessions, synthetic content only.
+
+`tests/run-native-numbering-integration.py` invokes the installed MathType insert-number, insert-reference, next-chapter, next-section and update commands. The document-local number preference is written through MathType's helper; the test bypasses the legacy simple-number normalization and does not change global numbering defaults.
+
+- Continuous `(1)`–`(6)`, chapter `(1-1)`–`(1-3)` / `(2-1)`–`(2-3)`, and chapter/section `(1.1.1)`, `(1.1.2)`, `(1.2.1)`, `(2.1.1)`, `(2.1.2)`, `(2.2.1)` all matched after saving and reopening.
+- Each of the four outputs has six genuine MathType objects, zero OMath, six `MTPlaceRef` numbers and six `GOTOBUTTON`/`REF` references with live target bookmarks. No ordinary Word list-numbered paragraphs are present.
+- Swapping the first two equation paragraphs updates the addition equation's references from `(1.1.1)` to `(1.1.2)` and the fraction's reference from `(1.1.2)` to `(1.1.1)`. Original native data is preserved in the new equation order.
+- Native `MTEditEquationSection2` breaks were inserted by MathType. The three numbering modes contain 1, 2 and 4 equation-break fields respectively, while every document retains exactly one Word section.
+- Four one-page native Word PDF exports were rasterized with Poppler and inspected: formula previews, right-aligned numbers and Chinese prose references were legible without clipping or overlap. The packaged DOCX renderer was attempted but its LibreOffice backend is unavailable on this host; native Word export supplied the PDF instead.
+
+This verifies the opt-in test route, not a chapter/section schema for the generic MCP renderer/validator/update tools. Explicit arbitrary starting values and interactive More Breaks / Modify Break dialogs are not covered. See the skill's numbering reference for commands and reproducible usage.
+
 ## 0.1.0 personal fork
 
 The fork uses its own initial version number, independent of upstream. After the name/version/README-only revision, 19 static/package checks and 8 MCP protocol checks passed again; equation-processing behavior was unchanged.
