@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a reproducible ZIP of the complete cross-agent plugin."""
+"""Build the full plugin ZIP and, for a default invocation, the portable skill archive."""
 
 from __future__ import annotations
 
@@ -58,6 +58,19 @@ def main() -> int:
     digest = package(root, output)
     print(f"Created: {output.resolve()}")
     print(f"SHA256: {digest}")
+    if len(sys.argv) <= 2:
+        skill_root = root / "skills" / "mathtype-for-word"
+        skill_output = root / "dist" / "mathtype-for-word.skill"
+        with zipfile.ZipFile(skill_output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+            for path in sorted(skill_root.rglob("*")):
+                if path.is_file() and should_include(path, root):
+                    archive.write(path, ARCHIVE_ROOT / path.relative_to(skill_root))
+        digest = hashlib.sha256(skill_output.read_bytes()).hexdigest()
+        skill_output.with_suffix(skill_output.suffix + ".sha256").write_text(
+            f"{digest}  {skill_output.name}\n", encoding="ascii"
+        )
+        print(f"Created: {skill_output.resolve()}")
+        print(f"SHA256: {digest}")
     return 0
 
 

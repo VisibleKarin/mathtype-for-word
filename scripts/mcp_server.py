@@ -18,7 +18,7 @@ from typing import Any, BinaryIO
 
 
 SERVER_NAME = "mathtype-for-word"
-SERVER_VERSION = "1.4.3"
+SERVER_VERSION = "1.5.0"
 # Absolute: main() leaves the folder the server was started in.
 SCRIPT_PATH = Path(__file__).resolve().with_name("mathtype-word.ps1")
 ENSURE_POWERSHELL_PATH = SCRIPT_PATH.with_name("ensure-pwsh.ps1")
@@ -45,7 +45,7 @@ POWERSHELL_VARIABLE = "MATHTYPE_WORD_POWERSHELL"
 # Path arguments the tools take. The server works in the temp folder, whatever folder the client started it in, so a
 # relative path would land somewhere the user does not expect.
 PATH_ARGUMENTS = ("input_path", "document_path", "presentation_path", "output_path", "manifest_path",
-                  "validation_manifest_path", "candidates_path", "marks_path")
+                  "validation_manifest_path", "candidates_path", "marks_path", "donor_path")
 _END_OF_INPUT = object()
 MAX_MESSAGE_BYTES = 64 * 1024 * 1024  # a Content-Length beyond this is a framing error, not a message
 POWERSHELL_INSTALL_FOLDER = r"%USERPROFILE%\.mathtype-for-word\PowerShell"  # ensure-pwsh.ps1's default InstallRoot
@@ -358,6 +358,50 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
 ]
+
+
+for _name, _description, _properties, _required, _read_only in (
+    ("inspect_mathtype_equations",
+     "Inspect existing DOCX MathType objects without Office. Return per-part indices, native SHA-256 fingerprints, "
+     "embedding/preview relationships and a source SHA-256 for a reviewed local edit plan. Does not read internal Full size.",
+     {"document_path": {"type": "string"}}, ["document_path"], True),
+    ("format_mathtype_equations",
+     "Set selected existing DOCX equations' internal Full size using an installed MathType SDK and a private carrier. "
+     "The local edit plan requires source/target fingerprints and explicit full_size_pt per operation. Reopen and read "
+     "back Full size, compare MathML trees and preserve other preferences; publish only selected OLE/preview/geometry/"
+     "baseline changes. Main-document inline objects only; clipboard is replaced. Never edits global defaults.",
+     {"input_path": {"type": "string"}, "output_path": {"type": "string"}, "manifest_path": {"type": "string"},
+      "overwrite": {"type": "boolean", "default": False}}, ["input_path", "output_path", "manifest_path"], False),
+    ("replace_mathtype_equations",
+     "Replace selected existing DOCX equations from a verified donor DOCX without opening Office. The local edit plan "
+     "requires source/donor document hashes and native fingerprints. Graft only selected OLE, matching preview, geometry "
+     "and baseline; preserve original text, breaks, comments, styles and native number/reference fields. Does not update fields.",
+     {"input_path": {"type": "string"}, "output_path": {"type": "string"}, "manifest_path": {"type": "string"},
+      "donor_path": {"type": "string"}, "overwrite": {"type": "boolean", "default": False}},
+     ["input_path", "output_path", "manifest_path", "donor_path"], False),
+):
+    TOOLS.append({"name": _name, "description": _description,
+                  "inputSchema": {"type": "object", "properties": _properties, "required": _required, "additionalProperties": False},
+                  "annotations": {"title": _name.replace("_", " ").title(), "readOnlyHint": _read_only,
+                                  "destructiveHint": False, "idempotentHint": _read_only, "openWorldHint": False}})
+
+
+def _local_equations(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    import mathtype_local
+    try:
+        if name == "inspect_mathtype_equations":
+            return mathtype_local.inspect_document(arguments["document_path"])
+        if name == "replace_mathtype_equations":
+            return mathtype_local.replace_equations(arguments["input_path"], arguments["output_path"],
+                                                    arguments["manifest_path"], arguments["donor_path"],
+                                                    bool(arguments.get("overwrite")))
+        refusal = _refuse_during_render_job("format-native")
+        if refusal:
+            return refusal
+        return mathtype_local.format_equations(arguments["input_path"], arguments["output_path"],
+                                               arguments["manifest_path"], bool(arguments.get("overwrite")), bridge=_invoke_bridge)
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
 def _log(message: str) -> None:
@@ -889,7 +933,7 @@ def _render_word(arguments: dict[str, Any]) -> dict[str, Any]:
 def _refuse_during_render_job(action: str) -> dict[str, Any] | None:
     """A render job releases the bridge lock between chunks; another editing action taking it there would make
     the next chunk time out on the lock and fail the job."""
-    if action not in ("render-pptx", "configure-defaults"):
+    if action not in ("render-pptx", "configure-defaults", "format-native"):
         return None
     import mathtype_batch
 
@@ -919,10 +963,13 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         "validate_mathtype_powerpoint_presentation": "validate-pptx",
     }
     local = {"render_mathtype_word_document": _render_word, "get_mathtype_render_status": _render_status}
+    for tool_name in ("inspect_mathtype_equations", "format_mathtype_equations", "replace_mathtype_equations"):
+        local[tool_name] = lambda args, name=tool_name: _local_equations(name, args)
     if name not in local and name not in actions:
         raise ValueError(f"Unknown tool: {name}")
     relative = [key for key in PATH_ARGUMENTS if arguments.get(key) and not Path(str(arguments[key])).is_absolute()]
-    missing_powershell = None if relative or name == "get_mathtype_render_status" else _ensure_powershell()
+    offline = ("get_mathtype_render_status", "inspect_mathtype_equations", "replace_mathtype_equations")
+    missing_powershell = None if relative or name in offline else _ensure_powershell()
     if relative:
         result = {"ok": False, "error": f"Pass absolute paths (with a drive letter or UNC prefix): {', '.join(relative)}."}
     elif missing_powershell is not None:

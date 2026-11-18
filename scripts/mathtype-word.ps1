@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('probe', 'probe-pptx', 'configure-defaults', 'check-manifest', 'scan', 'mark', 'render', 'validate', 'update', 'render-pptx', 'validate-pptx', 'cleanup')]
+    [ValidateSet('probe', 'probe-pptx', 'configure-defaults', 'check-manifest', 'scan', 'mark', 'render', 'validate', 'update', 'render-pptx', 'validate-pptx', 'cleanup', 'format-native')]
     [string]$Action,
 
     [string]$InputPath,
@@ -2365,6 +2365,47 @@ function Invoke-Update {
     Write-JsonResult ([ordered]@{ ok = $true; action = 'update'; output_path = $destination; fields_update_result = $updated; validation = $validation })
 }
 
+function Invoke-FormatNative {
+    # Internal carrier worker; the public Python/MCP operation validates and publishes the final package.
+    $jobPath = Resolve-ExistingFile -Path $ManifestPath -Label 'ManifestPath'
+    $job = Get-Content -Raw -LiteralPath $jobPath | ConvertFrom-Json
+    $roots = @()
+    foreach ($base in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+        if ($base) { $roots += Join-Path $base 'MathType' }
+    }
+    foreach ($key in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\MathType.exe',
+                       'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths\MathType.exe')) {
+        if (Test-Path -LiteralPath $key) {
+            $exe = (Get-Item -LiteralPath $key).GetValue('')
+            if ($exe) { $roots += Split-Path -Parent $exe.Trim('"') }
+        }
+    }
+    $root = $roots | Where-Object { (Test-Path -LiteralPath (Join-Path $_ 'System\MT6.dll')) -and
+                                                 (Test-Path -LiteralPath (Join-Path $_ 'Office Support\BlankEqn.doc')) } |
+        Select-Object -First 1
+    if (-not $root) { throw 'Installed MathType MT6.dll and Office Support\BlankEqn.doc were not found.' }
+    $dll = [IO.File]::ReadAllBytes((Join-Path $root 'System\MT6.dll'))
+    $pe = [BitConverter]::ToInt32($dll, 60)
+    $machine = [BitConverter]::ToUInt16($dll, $pe + 4)
+    $platform, $framework = switch ($machine) {
+        0x14c { 'x86', 'Framework' }
+        0x8664 { 'x64', 'Framework64' }
+        default { throw "Unsupported MathType SDK machine: $machine" }
+    }
+    $compiler = Join-Path $env:SystemRoot "Microsoft.NET\$framework\v4.0.30319\csc.exe"
+    if (-not (Test-Path -LiteralPath $compiler)) { throw 'The .NET Framework C# compiler is required for the native-size worker.' }
+    $worker = Join-Path ([IO.Path]::GetDirectoryName($jobPath)) 'MathTypeNativeWorker.exe'
+    $source = Join-Path $PSScriptRoot 'MathTypeNativeWorker.cs'
+    $messages = & $compiler /nologo /target:exe "/platform:$platform" "/out:$worker" /r:Microsoft.CSharp.dll /r:System.Core.dll /r:System.Xml.Linq.dll /r:System.Web.Extensions.dll $source 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "Native worker compilation failed: $messages" }
+    Write-Log -Level INFO -Message "Using installed MathType SDK ($platform) in $root."
+    $resultLines = @(& $worker $jobPath $root $script:OfficeJournalPath)
+    $workerExit = $LASTEXITCODE
+    if ($resultLines.Count -eq 0) { throw "Native-size worker returned no JSON (exit $workerExit)." }
+    Write-JsonResult ($resultLines[-1] | ConvertFrom-Json)
+    if ($workerExit -ne 0) { exit $workerExit }
+}
+
 function Invoke-Cleanup {
     if ([string]::IsNullOrWhiteSpace($OutputPath)) { throw 'cleanup requires OutputPath.' }
     $cleanup = Remove-OfficeTemporaryArtifacts -Destination $OutputPath -IncludeCurrentRun
@@ -2373,7 +2414,7 @@ function Invoke-Cleanup {
 }
 
 try {
-    if (@('render', 'render-pptx', 'configure-defaults') -contains $Action) { Enter-BridgeLock }
+    if (@('render', 'render-pptx', 'configure-defaults', 'format-native') -contains $Action) { Enter-BridgeLock }
     switch ($Action) {
         'probe' { Invoke-Probe }
         'probe-pptx' { Invoke-Probe -PowerPointRequired }
@@ -2387,6 +2428,7 @@ try {
         'render-pptx' { Invoke-RenderPptx }
         'validate-pptx' { Invoke-ValidatePptx }
         'cleanup' { Invoke-Cleanup }
+        'format-native' { Invoke-FormatNative }
     }
 }
 catch {

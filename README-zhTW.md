@@ -1,5 +1,11 @@
 # MathType for Word 與 PowerPoint
 
+此為 [VisibleKarin 個人 fork](https://github.com/VisibleKarin/mathtype-for-word)，基於 [Jia-Ming Zhou (Felimet) 的原始專案](https://github.com/felimet/mathtype-for-word)，保留原 MIT 授權及作者資訊。
+
+1.5.0 新增 `inspect_mathtype_equations`、`format_mathtype_equations` 和 `replace_mathtype_equations`：定位現有公式、設定內部 Full 字號並在儲存後讀回，或局部替換公式並同步預覽、尺寸及基線。保留原段落的文字、軟換行、批註、書籤、編號引用與未選公式；普通 Word 變數與上下標可保留文字形式。詳見[局部公式工作流程](skills/mathtype-for-word/references/local-equation-edits.md)。
+
+新操作使用獨立的局部編輯計畫，不重新編號、不更新欄位、不改整段樣式或全域預設。內部字號處理目前限主文件行內 MTEF 5 物件；x86 SDK 已於 Word 16.0 / MathType 7.8.2.441 實測。任意原物件內部結構修改、自動推斷正文字號及 PowerPoint 字號格式化尚未實作。私人稿件及商業元件不納入公開測試資料。
+
 [English](README.md)
 
 可安裝的 AI Agent skill、Codex/Claude plugin 與 MCP server，用於在 Microsoft Word 與 PowerPoint 建立可編輯的 MathType 7 公式；Word 文件另支援 MathType 原生公式編號與動態交叉引用。
@@ -70,7 +76,7 @@ powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 
 若要在 Claude Code、Claude Desktop、Codex 或 ChatGPT Desktop 使用本工具，貼上以下 prompt，Agent 會依目前環境完成設定：
 
 ```text
-從 https://github.com/felimet/mathtype-for-word 安裝或升級 MathType for Word and PowerPoint toolkit。偵測我目前可用的終端機，並使用 PowerShell 7、Windows 上的 Bash，包括 Git Bash，或 CMD。不可在 Windows PowerShell 5.1 執行 Office bridge；若目前為 5.1，切換至 Git Bash 或 CMD，再呼叫 Windows pwsh.exe。從 WSL Bash 執行時，呼叫 Windows pwsh.exe，不使用 Linux pwsh。若找不到 pwsh.exe，以 Windows powershell.exe 執行 scripts/ensure-pwsh.ps1，為目前使用者安裝 PowerShell 7，並告訴我安裝了什麼；若安裝失敗，停止執行並提示我依 https://learn.microsoft.com/zh-tw/powershell/scripting/install/microsoft-update-faq?view=powershell-7.6 安裝 PowerShell 7。確認桌面版 MathType for Windows ProductVersion 7.11.1.462，以及 Microsoft Word 與 PowerPoint 桌面版均可使用；Codex 與 Claude Code 從 repository 的 marketplace 安裝或升級 plugin（`codex plugin marketplace add felimet/mathtype-for-word` 或 `codex plugin marketplace upgrade mathtype-for-word`，再執行 `codex plugin add mathtype-for-word@mathtype-for-word`；`claude plugin marketplace add felimet/mathtype-for-word` 或 `claude plugin marketplace update mathtype-for-word`，再執行 `claude plugin install` 或 `claude plugin update mathtype-for-word@mathtype-for-word`），不要另外複製 skill 或手動註冊 MCP server；若已有手動註冊或複製的 skill，先告訴我並在移除前詢問我；其他平台安裝可攜式 skill 並註冊本機 stdio MCP server；執行兩項 MathType probe 與 repository 測試、保留既有 Agent 設定，並列出所有異動檔案。輸出未包含可編輯 Equation.DSMT4 物件或 validation 未回傳 ok: true 時，不得宣稱完成。
+從 https://github.com/VisibleKarin/mathtype-for-word 安裝或升級 MathType for Word and PowerPoint toolkit。偵測我目前可用的終端機，並使用 PowerShell 7、Windows 上的 Bash，包括 Git Bash，或 CMD。不可在 Windows PowerShell 5.1 執行 Office bridge；若目前為 5.1，切換至 Git Bash 或 CMD，再呼叫 Windows pwsh.exe。從 WSL Bash 執行時，呼叫 Windows pwsh.exe，不使用 Linux pwsh。若找不到 pwsh.exe，以 Windows powershell.exe 執行 scripts/ensure-pwsh.ps1，為目前使用者安裝 PowerShell 7，並告訴我安裝了什麼；若安裝失敗，停止執行並提示我依 https://learn.microsoft.com/zh-tw/powershell/scripting/install/microsoft-update-faq?view=powershell-7.6 安裝 PowerShell 7。確認桌面版 MathType for Windows ProductVersion 7.11.1.462，以及 Microsoft Word 與 PowerPoint 桌面版均可使用；Codex 與 Claude Code 從 repository 的 marketplace 安裝或升級 plugin（`codex plugin marketplace add VisibleKarin/mathtype-for-word` 或 `codex plugin marketplace upgrade mathtype-for-word`，再執行 `codex plugin add mathtype-for-word@mathtype-for-word`；`claude plugin marketplace add VisibleKarin/mathtype-for-word` 或 `claude plugin marketplace update mathtype-for-word`，再執行 `claude plugin install` 或 `claude plugin update mathtype-for-word@mathtype-for-word`），不要另外複製 skill 或手動註冊 MCP server；若已有手動註冊或複製的 skill，先告訴我並在移除前詢問我；其他平台安裝可攜式 skill 並註冊本機 stdio MCP server；執行兩項 MathType probe 與 repository 測試、保留既有 Agent 設定，並列出所有異動檔案。輸出未包含可編輯 Equation.DSMT4 物件或 validation 未回傳 ok: true 時，不得宣稱完成。
 ```
 
 再告訴 Agent 要處理的 DOCX 或 PPTX，以及需要建立的公式。
@@ -86,7 +92,7 @@ powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 
 從本 repository 的 marketplace 安裝 plugin。Plugin 內含 skill 與 MCP server，從安裝資料夾啟動 server，設定 1200 秒工具上限，並轉送 `MATHTYPE_*` 設定：
 
 ```console
-codex plugin marketplace add felimet/mathtype-for-word
+codex plugin marketplace add VisibleKarin/mathtype-for-word
 codex plugin add mathtype-for-word@mathtype-for-word
 ```
 
@@ -115,7 +121,7 @@ Plugin 與手動註冊擇一使用：以 `codex mcp add` 註冊的同名 server 
 從本 repository 的 marketplace 安裝 plugin：
 
 ```console
-claude plugin marketplace add felimet/mathtype-for-word
+claude plugin marketplace add VisibleKarin/mathtype-for-word
 claude plugin install mathtype-for-word@mathtype-for-word
 ```
 
@@ -220,7 +226,7 @@ python scripts/package_plugin.py
 
 ## 問題回報與交流
 
-若有任何問題，請至 [GitHub Issues](https://github.com/felimet/mathtype-for-word/issues) 提出並交流。
+若有任何問題，請至 [GitHub Issues](https://github.com/VisibleKarin/mathtype-for-word/issues) 提出並交流。
 
 ## 授權
 

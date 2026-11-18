@@ -294,7 +294,7 @@ class StaticContractTests(unittest.TestCase):
         self.assertIn("Silent AI-agent operation", readme)
         self.assertIn("AI Agent 靜默操作", readme_zh)
         for text in (readme, readme_zh):
-            self.assertIn("https://github.com/felimet/mathtype-for-word/issues", text)
+            self.assertIn("https://github.com/VisibleKarin/mathtype-for-word/issues", text)
             self.assertIn("en-paper-draft.docx", text)
             self.assertIn("en-presentation-draft.pptx", text)
             self.assertIn("ok: true", text)
@@ -326,7 +326,7 @@ class StaticContractTests(unittest.TestCase):
                     self.assertTrue(same(skill.read(f"mathtype-for-word/{name}"), path))
 
     def test_release_versions_are_aligned(self) -> None:
-        expected = "1.4.3"
+        expected = "1.5.0"
         expected_author = "Jia-Ming Zhou (Felimet)"
         for path in (
             ROOT / ".claude-plugin" / "plugin.json",

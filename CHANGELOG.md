@@ -4,6 +4,27 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/). Each release also lists upgrade notes and known limitations.
 
+## [1.5.0] - 2026-11-18
+
+Personal fork release: targeted existing-equation editing, based on upstream 1.4.3.
+
+### Added
+
+- Offline DOCX inventory with source/native fingerprints and relationship-based OLE/preview lookup.
+- Internal Full-size formatting for selected main-document inline equations using the installed SDK, an architecture-matched .NET worker, and a private carrier. Saved readback verifies Full and other preferences; MathML tree comparison catches structural changes and accidental appends.
+- Package-only replacement from a reviewed donor: copy selected native data, matching preview, geometry and baseline, preserving source paragraphs, native fields, comments, bookmarks, styles and unselected parts. Stale plans, shared parts and unsupported containers are refused; output publishes atomically.
+- Three MCP tools and a local CLI, synthetic unit tests and a reproducible opt-in Word integration.
+
+### Changed
+
+- Treat paragraph/definition wording, language, body size and numbering schemes as user/template choices. Keep ordinary Word variables as text when appropriate. Clarify the marker renderer's separate-paragraph/simple-number limitations.
+- Route installation and issue links to this fork while retaining upstream authorship/license and history. Rebuild portable packages.
+
+### Validation and limits
+
+- Live tested Word 16.0, MathType 7.8.2.441, x86 SDK: saved 10/10.5/11/12 pt, repeated formatting, six native objects with three native numbers/two references, mixed soft-break/comment paragraph and local replacement. See `tests/TEST-REPORT.md`.
+- x64 routing is implemented but not live tested. Floating objects, broad OMML conversion, general same-identity structural editing, alternate numbering insertion and PowerPoint internal-size formatting remain separate work. Existing local numbering is preserved, not rebuilt.
+
 ## [1.4.3] - 2026-11-08
 
 Validation catches equations that MathType did not translate, rendering into a document that already holds MathType

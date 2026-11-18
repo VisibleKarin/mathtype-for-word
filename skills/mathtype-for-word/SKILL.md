@@ -1,10 +1,10 @@
 ---
 name: mathtype-for-word
-description: Create, replace, number, cross-reference, update, inspect, or validate mathematical equations in Microsoft Word DOCX and PowerPoint PPTX using genuine MathType 7 Equation.DSMT4 objects. Use for DOCX or PPTX equation authoring, TeX-to-MathType conversion, consistent IEEE-style mathematical typography, academic Chinese or English prose around formulas, centered displays, MathType Word equation numbers such as (1), the “equation reference goes here” workflow, or repairs that must avoid Word OMath, captions, numbered lists, images, and fake text equations.
+description: Create and validate editable MathType equations in Word and PowerPoint, set internal Full size with saved readback, and replace selected Word equations while preserving nearby text, comments and native number/reference fields. Use for Equation.DSMT4 authoring, local equation edits, numbering and cross-references; ordinary Word variables need not become OLE objects.
 license: MIT
 metadata:
   author: Jia-Ming Zhou (Felimet)
-  version: 1.4.3
+  version: 1.5.0
 ---
 
 # MathType for Word and PowerPoint
@@ -13,12 +13,12 @@ Create real MathType equations in DOCX and PPTX, preserving MathType-native Word
 
 ## Non-negotiable invariants
 
-- Equations are `Equation.DSMT4` inline OLE objects created by MathType Toggle TeX.
+- New equations are genuine `Equation.DSMT4` objects created by MathType Toggle TeX; formatting uses the installed native SDK and a verified empty MathType object.
 - Numbered displays use MathType `MACROBUTTON MTPlaceRef` and `SEQ MTEqn` fields.
 - References use `MTCommand_InsertEqnRef`, its `MTReference` placeholder, and the target number's `MTPlaceRef` action. A resolved reference is a `GOTOBUTTON` containing a nested `REF` to a `ZEqnNum...` bookmark.
 - The default number format is simple Arabic equation number only: `(1)`, `(2)`, `(3)`, with chapter and section components disabled.
-- Apply numbering to new numbers and the whole processed document. Update fields after edits.
-- Never substitute Word numbered lists, captions, `SEQ Equation`, OMath, Unicode-only text, images, or manually typed numbers. Use those only as an explicitly accepted, clearly labeled fallback when MathType is unavailable.
+- The legacy marker render uses simple `(n)` numbering starting at 1. Existing-document local edits preserve the source numbering scheme and fields. Refresh fields when their order or targets change; formatting alone does not require a field update.
+- Never substitute Word numbered lists, captions, `SEQ Equation`, OMath, images, or manually typed numbers for requested MathType equations/fields. Ordinary prose variables and Word sub/superscripts may remain text. Use a fallback for requested equations only when explicitly accepted and clearly labeled.
 - PowerPoint equations are centered, floating `Equation.DSMT4` OLE objects. PowerPoint has no MathType-native equivalent of Word's equation-number/reference fields, so do not imitate them with typed numbers or links.
 - Keep each symbol's mathematical role and font style consistent across display equations, inline math, prose, captions, and definitions.
 - Keep Word, PowerPoint, and MathType automation silent: leave application windows hidden, suppress modal alerts, do not steal focus, and do not automate visible UI with mouse, keyboard, `AppActivate`, or `SendKeys`. If a step cannot run silently, stop and report the limitation.
@@ -47,11 +47,13 @@ Create real MathType equations in DOCX and PPTX, preserving MathType-native Word
 
 ## Mandatory Word workflow
 
+Choose the operation before using the marker renderer. For internal-size changes or replacement of existing objects, follow [local-equation-edits.md](references/local-equation-edits.md). That path preserves mixed paragraphs, soft-break explanations, comments, bookmarks and existing native fields; it does not require rebuilding the document or renumbering from 1. General structure-changing edits inside the same OLE identity are not implemented.
+
 1. Preserve the input DOCX and choose an explicit output path.
 2. Call `probe_mathtype_word` once per task, not before every render. Stop on a failed prerequisite; report the exact failed check.
 3. Scan the complete document twice. First inventory every equation candidate and later prose reference. Then classify each candidate as `inline`, `display`, or `display_numbered`, and each prose occurrence as `reference`, using [academic-equation-style.md](references/academic-equation-style.md). Decide every identifier, unique marker, TeX, layout, numbered state, reference marker, and target. When the draft holds plain-text mathematics or placeholders instead of `{{MATH:…}}` markers, call `scan_mathtype_candidates` first: it lists Word's paragraph numbers, the exact paragraph text, and math signals, including sub/superscripts that plain text loses. Then write a marks file and call `mark_mathtype_document` to save a marked copy, and render that copy. For a reference, mark only the number, such as `(1)`; `Eq.` or `式` stays in the prose. A display equation's marker must end up alone in its paragraph: mark the whole paragraph text only when the paragraph holds nothing but the formula. When a display formula shares its paragraph with prose (lines joined by Shift+Enter included), ask the user to put it in its own paragraph, or keep it inline if the user agrees, and scan again before marking.
 4. Create a schema v1 JSON manifest. Read [workflow-and-schema.md](references/workflow-and-schema.md) for the exact contract and examples.
-5. For academic prose and mathematical typography, apply [academic-equation-style.md](references/academic-equation-style.md). A display equation must be introduced in the preceding prose and followed by “其中，” plus definitions of every symbol, index, superscript, subscript, unit, and physical meaning that is not already unambiguous. Audit the whole document so variables, vectors, matrices, functions, constants, indices, and units retain one consistent style.
+5. For mathematical typography, apply [academic-equation-style.md](references/academic-equation-style.md) within the requested scope. Follow the user's language and template for lead-ins, definitions, paragraph breaks and numbering. Report missing definitions when relevant; an equation edit does not authorize rewriting scientific prose or reformatting the whole manuscript.
 6. Call `render_mathtype_word_document`. Do not edit the same DOCX concurrently in Word. Manifests whose equations plus references exceed `batch_size` (default 40) render in fresh Word sessions with checkpoints; a foreground render runs all of them in one tool call, which can outlast the client's time limit (Codex: 1200 s with the plugin), so for such manifests pass `background: true` and poll `get_mathtype_render_status` while its status is `queued` or `running`, and stop on any other status. On `interrupted`, call render again with the same paths (and `background: true` again) to resume from the last checkpoint. On `failed`, read `error` first: a bad marker, TeX, or validation result needs a corrected manifest or document, which starts the job over.
 7. Read the render result's `validation` (for a background job, `result.validation` from `get_mathtype_render_status` once it is `completed`). The bridge validates the saved file against the whole manifest before it publishes the output, so a successful render already carries the `ok: true` report; do not call `validate_mathtype_word_document` again for it. A render is incomplete until that report is `ok: true`. Call the validate tool only to re-check a document changed later, with the same manifest and the render's `existing_number_fields` and `existing_references`.
 8. Validation reads every saved equation and rejects one whose TeX MathType did not translate (red literal text) or whose symbol it could not map (a diamond), naming the equation and its TeX, and for red text the untranslated command. For complex fractions, matrices, accents, or nested scripts, still open/render the result and visually inspect the layout. Structural checks cannot prove typographic correctness.
@@ -79,6 +81,9 @@ Use the bundled local MCP server when available:
 - `get_mathtype_render_status`: progress, log tail, and final result of a render job, keyed by its output path.
 - `validate_mathtype_word_document`: read-only structural validation.
 - `update_mathtype_word_fields`: update number/reference fields after moving, adding, or deleting equations.
+- `inspect_mathtype_equations`: inspect DOCX object indices, native hashes and relationships without Office; use the result to select existing objects.
+- `format_mathtype_equations`: set selected existing objects' internal Full size, verify saved readback and MathML structure, then publish only local changes.
+- `replace_mathtype_equations`: replace selected objects using a reviewed donor DOCX, including the matching vector preview, geometry and baseline.
 - `probe_mathtype_powerpoint`: verify the desktop PowerPoint and MathType 7 integration.
 - `render_mathtype_powerpoint_presentation`: replace marker-only text boxes with centered, editable MathType OLE objects.
 - `validate_mathtype_powerpoint_presentation`: verify expected named OLE objects, centering, and resolved markers.
@@ -133,7 +138,10 @@ The bridge temporarily suppresses blocking dialogs during headless automation, r
 
 ## Editing existing documents
 
-- Use markers for deterministic edits. If the document has no markers, create a working copy and insert unique markers at the intended ranges before rendering.
+- Inspect existing objects and use the local edit tools for replacement or internal size. Use markers for new equations; the marker renderer cannot directly rewrite an existing OLE object's internals.
+- Choose target pt from the user/template or an unambiguous body style and record that basis in the task report. Do not infer it from an equation, title, caption or mixed-size range. Pass explicit `full_size_pt`; automatic style inference is not implemented.
+- Word font size, `ScaleWidth`/`ScaleHeight`, and visual shrinkage are not internal-size evidence. A zero scale readback does not establish 100% scaling. Require the saved internal Full-size report.
+- Local formatting changes only Full, preserving the object's other saved preferences. Never change global MathType defaults to format a single document.
 - Rendering converts only the marked ranges: existing MathType objects stay byte-identical, and validation expects the document's existing numbers and references plus the manifest's (`existing_number_fields` and `existing_references` in the render result).
 - Never use broad find/replace on TeX fragments or equation text.
 - After reordering or deleting numbered equations, call `update_mathtype_word_fields`, then validate again.
@@ -180,6 +188,7 @@ Treat any of these as a failed deliverable:
 
 ## Reference routing
 
+- Existing-object inspection, internal size, local replacement and mixed paragraphs: [local-equation-edits.md](references/local-equation-edits.md)
 - Manifest design and end-to-end examples: [workflow-and-schema.md](references/workflow-and-schema.md)
 - Native field anatomy and Format Equation Numbers behavior: [numbering-and-references.md](references/numbering-and-references.md)
 - Academic placement, consistent symbol typography, definitions, units, and TeX/MathML guidance: [academic-equation-style.md](references/academic-equation-style.md)

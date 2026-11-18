@@ -1,5 +1,22 @@
 # Test report
 
+## 1.5.0 personal fork
+
+Date: 2026-11-18. Environment: Windows, Word 16.0, MathType 7.8.2.441, installed x86 MT6.dll, PowerShell 7.6.9.
+
+The new integration (`python tests/run-local-integration.py --work-dir <new absolute folder>`) uses synthetic documents. It creates six native equations, three native numbers and two references, then adds a soft-break explanation/comment anchor to an equation paragraph. No private manuscript or proprietary SDK/template is distributed.
+
+- Four selected equations were set to 10, 10.5, 11 and 12 pt. Saved/reopened internal Full readback matched all four targets. Before/saved MathML trees and every other saved preference agreed. The other two equations' native data remained unchanged.
+- Legacy native-field validation passed after formatting: six MathType objects, no OMath, three numbers `[1, 2, 3]`, two live references.
+- Repeating the four size operations passed without adding equations, paragraphs, numbers or references. The formatted and repeated single-page PNGs were byte-identical.
+- Replacing the first equation with a taller donor fraction passed local-package validation. The original source number/reference fields, soft break, explanation, comments, bookmarks, styles and other package parts remained intact; only selected OLE/preview/geometry/baseline changed.
+- Word PDF exports of formatted, repeated and replaced outputs were rendered and visually checked. All were one page; equations, adjacent text and native numbers were legible without clipping or collisions. Poppler reported missing display-font fallback warnings for Symbol/ArialUnicode, but the inspected pages retained the visible equation symbols.
+- The dedicated non-Office unit tests cover stale hashes, duplicate targets, shared previews, source/output protection, malformed/cyclic CFB input, namespace differences, incorrect size readback, changed preferences, and duplicate or same-text/different-structure MathML. They use synthetic CFB/OOXML fixtures and pass without Office.
+
+Known boundaries: x64 SDK routing has not been live tested. General same-identity structural edits, floating equations, PowerPoint internal size, broad OMML conversion and alternate-numbering insertion are not covered. Local edits preserve existing fields; they do not regenerate or update them. Legacy render's extra empty-paragraph observation remains a separate issue; local edits do not delete blank paragraphs.
+
+The final non-Office suite (`tests/run-tests.ps1`) ran 118 tests: 112 passed, 6 skipped; PowerShell parsing passed. The skips were one opt-in legacy live-probe test and five installer scenarios needing a conventional, non-Store PowerShell installation. The new Word integration was run separately and passed with actual Word superscript formatting and complete comment anchors; the Word process set returned to its baseline after the normal shutdown grace period. Skill frontmatter validation and reference-link checks passed. Historical upstream results below refer to their original environments.
+
 ## 1.4.3
 
 Date: 2026-11-08

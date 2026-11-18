@@ -39,7 +39,7 @@ Set `<REPO_ROOT>` to the absolute path of the checked-out repository before usin
 Install the plugin from the repository's marketplace; it carries the skill and the MCP server:
 
 ```console
-codex plugin marketplace add felimet/mathtype-for-word
+codex plugin marketplace add VisibleKarin/mathtype-for-word
 codex plugin add mathtype-for-word@mathtype-for-word
 ```
 
@@ -75,7 +75,7 @@ The plugin starts the server from its installed folder, sets `tool_timeout_sec =
 Install the plugin from the repository's marketplace:
 
 ```console
-claude plugin marketplace add felimet/mathtype-for-word
+claude plugin marketplace add VisibleKarin/mathtype-for-word
 claude plugin install mathtype-for-word@mathtype-for-word
 ```
 

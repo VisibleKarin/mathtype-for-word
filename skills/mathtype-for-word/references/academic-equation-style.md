@@ -3,11 +3,10 @@
 ## Placement
 
 - Keep an inline equation inside the grammatical sentence and preserve surrounding punctuation.
-- Put a display equation in its own paragraph.
-- Introduce every display equation in the preceding prose. Do not let a display appear without a textual lead-in.
+- The marker renderer requires a display marker in its own paragraph; local replacement preserves existing mixed paragraphs.
+- When authoring prose, use an appropriate lead-in and definitions according to the user's template. A local equation edit does not authorize adding or rewriting surrounding prose.
 - Refer to a numbered equation through its MathType reference field, for example “如式 (1) 所示”. Never type the number manually.
-- Begin the first explanatory paragraph after a display with `其中，` when defining notation in Traditional Chinese.
-- Begin the first explanatory sentence after an English display with `where` and keep it grammatically connected to the equation.
+- `其中，` (Chinese) and `where` (English) are useful definition introductions when they fit the document's language/style.
 
 ## Automatic classification and numbering
 
@@ -35,9 +34,11 @@ Apply these tie-breakers in order:
 - If later prose specifically refers to an unnumbered display, promote that display to `display_numbered`; never type a static number as a shortcut.
 - In PowerPoint, classify equations as floating displays only. Word-style MathType numbering and dynamic references are unavailable.
 
-## Required paragraph pattern
+## Paragraph style and scope
 
-Place every `display` and `display_numbered` equation in its own centered paragraph. Put a textual lead-in immediately before it. Start the following paragraph with `其中，` in Traditional Chinese, then define every symbol, index, subscript, superscript, unit, and physical meaning. Do not leave a variable used in the equation or body undefined, and do not add a variable that is absent from the equation or surrounding body. In particular, 不得列出未於正文說明的變數。
+Follow the user's document/template for language, introductions and definitions. An independent centered paragraph followed by a definition paragraph is a useful authoring default; `其中，` and the Traditional Chinese examples below are optional prose conventions. Report ambiguous or missing definitions instead of inventing scientific content during a local equation edit.
+
+The marker renderer currently requires a display marker in its own paragraph. This is a tool limitation, not a universal typesetting rule. Existing paragraphs containing an equation, native number, soft break and explanation can be preserved by the [local edit workflow](local-equation-edits.md). Keep simple variables as ordinary Word text/subscripts/superscripts when appropriate. Scope a notation audit to the user's request; do not rewrite all prose, captions or tables as a side effect.
 
 Source pattern:
 
@@ -53,7 +54,7 @@ Source pattern:
 
 The reference entry for `{{EQREF:cumulative_deflection_result}}` targets `cumulative_deflection`. Use a different marker for each additional occurrence, even when several occurrences target the same equation.
 
-Required Traditional Chinese dynamic-reference forms include:
+Traditional Chinese dynamic-reference examples include:
 
 ```text
 ……，其於 y 方向之累積偏折角可表示如式 {{EQREF:cumulative_deflection_statement}} 所示。
@@ -65,7 +66,7 @@ After rendering, the markers appear as dynamic references such as `如式 (2) �
 
 ## Mathematical typography contract
 
-Apply one notation standard across the entire document. The same symbol must retain the same mathematical role and style in display equations, inline math, prose, captions, tables, and definition paragraphs.
+Preserve the same mathematical role and style for a symbol within the requested scope. When a whole-document notation audit is requested, check the same symbol across display equations, inline math, prose, captions, tables and definitions.
 
 | Role | Required style | TeX or MathML pattern |
 |---|---|---|
@@ -108,6 +109,8 @@ Use `Eq.` for a singular reference and `Eqs.` for plural references unless the t
 ## Definitions
 
 Define all non-obvious notation at first use:
+
+When drafting definitions, 不得列出未於正文說明的變數; do not invent symbols or scientific meaning. In a local edit, report ambiguity rather than expanding the manuscript without authorization.
 
 - Roman and Greek symbols.
 - Vectors, matrices, tensors, and sets.

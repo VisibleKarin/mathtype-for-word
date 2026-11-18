@@ -1,6 +1,17 @@
 # MathType for Word and PowerPoint
 
-[![HOL Guard](https://img.shields.io/endpoint?url=https%3A%2F%2Fhol.org%2Fapi%2Fregistry%2Fbadges%2Fplugin%3Fslug%3Djia-ming-zhou-felimet%252Fmathtype-for-word%26metric%3Drelease)](https://hol.org/registry/plugins/jia-ming-zhou-felimet%2Fmathtype-for-word?utm_source=hol_marketplace&utm_medium=plugins_badge&utm_campaign=plugins&utm_content=jia-ming-zhou-felimet%2Fmathtype-for-word&ref=plugin-author-a1ebb28d)
+
+Personal fork maintained at [VisibleKarin/mathtype-for-word](https://github.com/VisibleKarin/mathtype-for-word), based on [Jia-Ming Zhou (Felimet)'s project](https://github.com/felimet/mathtype-for-word). Original MIT attribution is retained. Version 1.5.0 adds local Word equation editing; upstream history is preserved.
+
+本 fork 新增：选定公式的内部 Full 字号设置与保存后读回、现有公式定位与指纹检查、从承载文档局部替换公式并同步预览和基线。保留原段落中的编号、原生引用、软回车、批注、书签及未选公式。普通 Word 变量和上下标不强制转换为 OLE。详见 [local equation workflow](skills/mathtype-for-word/references/local-equation-edits.md)。
+
+| Operation | MCP tool | Evidence / scope |
+|---|---|---|
+| Inspect existing objects | `inspect_mathtype_equations` | Native and document hashes; no Office session |
+| Set internal Full size | `format_mathtype_equations` | Saved Full readback, MathML tree comparison, other preferences preserved |
+| Replace selected objects | `replace_mathtype_equations` | Verified donor OLE + preview + geometry + baseline; source fields/text retained |
+
+The new operations use reviewed local edit plans, distinct from marker-render manifests. They preserve existing number schemes and do not refresh fields or reformat paragraph styles. Internal size currently supports main-document inline MTEF 5 objects. General editing inside an unchanged OLE identity, automatic body-style inference, and PowerPoint internal-size formatting are not implemented. MathType/Office are required for size formatting; the x86 SDK is live tested on Word 16.0 and MathType 7.8.2.441. Private manuscripts and vendor components are not shipped as tests.
 
 [繁體中文](README-zhTW.md)
 
@@ -72,7 +83,7 @@ When the download is blocked (offline, a proxy, or a policy), install PowerShell
 If you want to use MathType for Word and PowerPoint in Claude Code, Claude Desktop, Codex, or ChatGPT Desktop, paste the following prompt. The agent will configure it for the current environment:
 
 ```text
-Install or upgrade the MathType for Word and PowerPoint toolkit from https://github.com/felimet/mathtype-for-word. Detect my available terminal and use PowerShell 7, Bash on Windows including Git Bash, or CMD. Do not run the Office bridge under Windows PowerShell 5.1; if 5.1 is active, switch to Git Bash or CMD and invoke Windows pwsh.exe. From WSL Bash, invoke Windows pwsh.exe rather than Linux pwsh. If pwsh.exe is missing, run scripts/ensure-pwsh.ps1 with Windows powershell.exe, which installs PowerShell 7 for the current user, and tell me what it installed; if it fails, stop and tell me to install PowerShell 7 using https://learn.microsoft.com/zh-tw/powershell/scripting/install/microsoft-update-faq?view=powershell-7.6. Verify desktop MathType for Windows ProductVersion 7.11.1.462 plus Microsoft Word and PowerPoint desktop, for Codex and Claude Code, install or upgrade the plugin from the repository's marketplace (`codex plugin marketplace add felimet/mathtype-for-word` or `codex plugin marketplace upgrade mathtype-for-word`, then `codex plugin add mathtype-for-word@mathtype-for-word`; `claude plugin marketplace add felimet/mathtype-for-word` or `claude plugin marketplace update mathtype-for-word`, then `claude plugin install` or `claude plugin update mathtype-for-word@mathtype-for-word`) and do not also copy the skill or register the MCP server by hand; if a hand registration or a copied skill already exists, tell me and ask before removing it; for other hosts, install the portable skill and register the local stdio MCP server; run both MathType probes and the repository tests, preserve existing agent configuration, and report every changed file. Do not claim success unless the outputs contain editable Equation.DSMT4 objects and validation returns ok: true.
+Install or upgrade the MathType for Word and PowerPoint toolkit from https://github.com/VisibleKarin/mathtype-for-word. Detect my available terminal and use PowerShell 7, Bash on Windows including Git Bash, or CMD. Do not run the Office bridge under Windows PowerShell 5.1; if 5.1 is active, switch to Git Bash or CMD and invoke Windows pwsh.exe. From WSL Bash, invoke Windows pwsh.exe rather than Linux pwsh. If pwsh.exe is missing, run scripts/ensure-pwsh.ps1 with Windows powershell.exe, which installs PowerShell 7 for the current user, and tell me what it installed; if it fails, stop and tell me to install PowerShell 7 using https://learn.microsoft.com/zh-tw/powershell/scripting/install/microsoft-update-faq?view=powershell-7.6. Verify desktop MathType for Windows ProductVersion 7.11.1.462 plus Microsoft Word and PowerPoint desktop, for Codex and Claude Code, install or upgrade the plugin from the repository's marketplace (`codex plugin marketplace add VisibleKarin/mathtype-for-word` or `codex plugin marketplace upgrade mathtype-for-word`, then `codex plugin add mathtype-for-word@mathtype-for-word`; `claude plugin marketplace add VisibleKarin/mathtype-for-word` or `claude plugin marketplace update mathtype-for-word`, then `claude plugin install` or `claude plugin update mathtype-for-word@mathtype-for-word`) and do not also copy the skill or register the MCP server by hand; if a hand registration or a copied skill already exists, tell me and ask before removing it; for other hosts, install the portable skill and register the local stdio MCP server; run both MathType probes and the repository tests, preserve existing agent configuration, and report every changed file. Do not claim success unless the outputs contain editable Equation.DSMT4 objects and validation returns ok: true.
 ```
 
 Then tell your agent which DOCX or PPTX file to edit and describe the required equations.
@@ -88,7 +99,7 @@ Replace `<REPO_ROOT>` with the absolute local checkout path. Preserve existing M
 Install the plugin from this repository's marketplace. The plugin carries the skill and the MCP server, starts the server from its installed folder, sets the 1200 s tool limit and forwards the `MATHTYPE_*` settings:
 
 ```console
-codex plugin marketplace add felimet/mathtype-for-word
+codex plugin marketplace add VisibleKarin/mathtype-for-word
 codex plugin add mathtype-for-word@mathtype-for-word
 ```
 
@@ -117,7 +128,7 @@ Use the plugin or the hand registration, not both: a server registered with `cod
 Install the plugin from this repository's marketplace:
 
 ```console
-claude plugin marketplace add felimet/mathtype-for-word
+claude plugin marketplace add VisibleKarin/mathtype-for-word
 claude plugin install mathtype-for-word@mathtype-for-word
 ```
 
@@ -222,7 +233,7 @@ The command creates `dist/mathtype-for-word-plugin.zip` and its SHA-256 file. Th
 
 ## Support
 
-If you encounter any problems, please open a [GitHub Issue](https://github.com/felimet/mathtype-for-word/issues) to report them and discuss solutions.
+If you encounter any problems, please open a [GitHub Issue](https://github.com/VisibleKarin/mathtype-for-word/issues) to report them and discuss solutions.
 
 ## License
 
