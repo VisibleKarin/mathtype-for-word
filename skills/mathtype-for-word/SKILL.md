@@ -4,10 +4,12 @@ description: Create and validate editable MathType equations in Word and PowerPo
 license: MIT
 metadata:
   author: Jia-Ming Zhou (Felimet)
-  version: 1.5.0
+  version: 0.1.0
 ---
 
-# MathType for Word and PowerPoint
+# MathType for Word
+
+This personal fork was improved with Codex assistance. Use cautiously and review results on document copies.
 
 Create real MathType equations in DOCX and PPTX, preserving MathType-native Word numbering and references. Treat source Office files as user data: write a new output unless the user explicitly authorizes in-place replacement.
 

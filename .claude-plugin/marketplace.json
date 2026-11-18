@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "mathtype-for-word",
-  "description": "MathType for Word and PowerPoint: native MathType equations, numbering, and references.",
+  "description": "MathType for Word: editable equations, local formatting, numbering and references.",
   "owner": {
     "name": "VisibleKarin",
     "url": "https://github.com/VisibleKarin"
@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "mathtype-for-word",
-      "description": "Create and validate native MathType equations in Word and PowerPoint, including Word-native equation numbers and references.",
+      "description": "Create, format and validate editable MathType equations in Microsoft Word.",
       "source": "./",
       "category": "productivity"
     }

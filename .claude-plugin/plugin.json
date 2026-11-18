@@ -1,7 +1,7 @@
 {
   "name": "mathtype-for-word",
-  "version": "1.5.0",
-  "description": "Create and validate native MathType equations in Word and PowerPoint, including Word-native equation numbers and references.",
+  "version": "0.1.0",
+  "description": "Create, format and validate editable MathType equations in Microsoft Word.",
   "author": {
     "name": "Jia-Ming Zhou (Felimet)"
   },

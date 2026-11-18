@@ -250,40 +250,20 @@ class StaticContractTests(unittest.TestCase):
         ):
             self.assertIn(phrase, text)
 
-    def test_readmes_name_exact_desktop_package(self) -> None:
-        for filename in ("README.md", "README-zhTW.md"):
-            text = (ROOT / filename).read_text(encoding="utf-8")
-            self.assertIn("MathType-win-zh-7.11.1.462", text)
-            self.assertIn("https://mathtype.tw/download/", text)
-            self.assertIn("MathType for Windows", text)
-            self.assertIn("MathType Add-In for Microsoft 365", text)
-            self.assertIn("Git Bash", text)
-            self.assertIn("CMD", text)
-            self.assertIn("PowerShell 5.1", text)
-            self.assertIn("pwsh.exe", text)
-            self.assertIn(
-                "https://learn.microsoft.com/zh-tw/powershell/scripting/install/"
-                "microsoft-update-faq?view=powershell-7.6",
-                text,
-            )
-            for phrase in (
-                "### Codex",
-                "### Claude Code",
-                "### Claude Desktop",
-                "### ChatGPT Desktop",
-                "codex mcp add",
-                "claude mcp add",
-                "claude_desktop_config.json",
-                "Secure MCP Tunnel",
-            ):
-                self.assertIn(phrase, text)
-            self.assertNotIn("SkillSpector", text)
+    def test_installation_reference_names_exact_desktop_package(self) -> None:
+        text = (ROOT / "skills" / "mathtype-for-word" / "references" / "installation-matrix.md").read_text(encoding="utf-8")
+        for phrase in (
+            "MathType-win-zh-7.11.1.462", "https://mathtype.tw/download/", "MathType for Windows",
+            "MathType Add-In for Microsoft 365", "Git Bash", "CMD", "PowerShell 5.1", "pwsh.exe",
+            "https://learn.microsoft.com/zh-tw/powershell/scripting/install/microsoft-update-faq?view=powershell-7.6",
+            "## Codex", "## Claude Code", "## Claude Desktop", "## ChatGPT Desktop",
+            "codex mcp add", "claude mcp add", "claude_desktop_config.json", "Secure MCP Tunnel",
+        ):
+            self.assertIn(phrase, text)
 
-    def test_silent_office_policy_and_issue_links(self) -> None:
+    def test_silent_office_policy(self) -> None:
         bridge = (ROOT / "scripts" / "mathtype-word.ps1").read_text(encoding="utf-8")
         skill = (ROOT / "skills" / "mathtype-for-word" / "SKILL.md").read_text(encoding="utf-8")
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        readme_zh = (ROOT / "README-zhTW.md").read_text(encoding="utf-8")
         self.assertIn("$script:Word.Visible = $false", bridge)
         self.assertIn("$script:Word.DisplayAlerts = 0", bridge)
         self.assertIn("$script:PowerPoint.DisplayAlerts = 1", bridge)
@@ -291,15 +271,6 @@ class StaticContractTests(unittest.TestCase):
         for forbidden in ("OLEFormat.Activate", "AppActivate", "SendKeys(", "SetMathMLClipboard"):
             self.assertNotIn(forbidden, bridge)
         self.assertIn("Keep Word, PowerPoint, and MathType automation silent", skill)
-        self.assertIn("Silent AI-agent operation", readme)
-        self.assertIn("AI Agent 靜默操作", readme_zh)
-        for text in (readme, readme_zh):
-            self.assertIn("https://github.com/VisibleKarin/mathtype-for-word/issues", text)
-            self.assertIn("en-paper-draft.docx", text)
-            self.assertIn("en-presentation-draft.pptx", text)
-            self.assertIn("ok: true", text)
-        self.assertIn("Quick AI-agent test prompt", readme)
-        self.assertIn("AI Agent 簡易測試 Prompt", readme_zh)
 
     def test_packages_in_dist_carry_the_current_runtime_files(self) -> None:
         # A package built before the last change ships stale code, as the 1.3.0 packages did.
@@ -326,7 +297,7 @@ class StaticContractTests(unittest.TestCase):
                     self.assertTrue(same(skill.read(f"mathtype-for-word/{name}"), path))
 
     def test_release_versions_are_aligned(self) -> None:
-        expected = "1.5.0"
+        expected = "0.1.0"
         expected_author = "Jia-Ming Zhou (Felimet)"
         for path in (
             ROOT / ".claude-plugin" / "plugin.json",

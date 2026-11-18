@@ -1,7 +1,7 @@
 {
   "name": "mathtype-for-word",
   "interface": {
-    "displayName": "MathType for Word and PowerPoint"
+    "displayName": "MathType for Word"
   },
   "plugins": [
     {

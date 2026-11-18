@@ -1,6 +1,8 @@
 # Test report
 
-## 1.5.0 personal fork
+## 0.1.0 personal fork
+
+The fork uses its own initial version number, independent of upstream. After the name/version/README-only revision, 19 static/package checks and 8 MCP protocol checks passed again; equation-processing behavior was unchanged.
 
 Date: 2026-11-18. Environment: Windows, Word 16.0, MathType 7.8.2.441, installed x86 MT6.dll, PowerShell 7.6.9.
 

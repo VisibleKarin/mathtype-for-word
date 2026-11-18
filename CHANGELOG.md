@@ -4,9 +4,9 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/). Each release also lists upgrade notes and known limitations.
 
-## [1.5.0] - 2026-11-18
+## [0.1.0] - 2026-11-18
 
-Personal fork release: targeted existing-equation editing, based on upstream 1.4.3.
+Initial personal fork version, based on upstream 1.4.3; its version numbering is independent of upstream. Improvements were implemented with Codex assistance. This is experimental software; use cautiously.
 
 ### Added
 
@@ -24,6 +24,10 @@ Personal fork release: targeted existing-equation editing, based on upstream 1.4
 
 - Live tested Word 16.0, MathType 7.8.2.441, x86 SDK: saved 10/10.5/11/12 pt, repeated formatting, six native objects with three native numbers/two references, mixed soft-break/comment paragraph and local replacement. See `tests/TEST-REPORT.md`.
 - x64 routing is implemented but not live tested. Floating objects, broad OMML conversion, general same-identity structural editing, alternate numbering insertion and PowerPoint internal-size formatting remain separate work. Existing local numbering is preserved, not rebuilt.
+
+## Upstream history
+
+The entries below are retained from the original project.
 
 ## [1.4.3] - 2026-11-08
 

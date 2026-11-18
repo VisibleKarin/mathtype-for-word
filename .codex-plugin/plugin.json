@@ -1,7 +1,7 @@
 {
   "name": "mathtype-for-word",
-  "version": "1.5.0",
-  "description": "Create and validate native MathType equations in Word and PowerPoint, including Word-native equation numbers and references.",
+  "version": "0.1.0",
+  "description": "Create, format and validate editable MathType equations in Microsoft Word.",
   "author": {
     "name": "Jia-Ming Zhou (Felimet)"
   },
@@ -20,10 +20,10 @@
   "skills": "./skills/",
   "mcpServers": "./.codex-mcp.json",
   "interface": {
-    "displayName": "MathType for Word and PowerPoint",
-    "shortDescription": "Native MathType equations in Word and PowerPoint.",
-    "longDescription": "Automates genuine Equation.DSMT4 equations in Word and PowerPoint, plus MathType-native (1) numbering, cross-references, field updates, and structural validation in Word documents.",
-    "developerName": "Jia-Ming Zhou (Felimet)",
+    "displayName": "MathType for Word",
+    "shortDescription": "Editable MathType equations and local formatting in Word.",
+    "longDescription": "Create, inspect, format and replace editable MathType equations in Word while preserving native numbering, references and surrounding content.",
+    "developerName": "VisibleKarin (fork; Codex-assisted)",
     "category": "Productivity",
     "capabilities": [
       "Interactive",
@@ -32,7 +32,7 @@
     "defaultPrompt": [
       "Replace Word markers with native MathType equations.",
       "Add MathType-native equation numbers and references.",
-      "Replace PowerPoint markers with editable centered MathType equations."
+      "Set internal Full size for selected Word equations and verify the saved result."
     ],
     "brandColor": "#0078D4"
   }
