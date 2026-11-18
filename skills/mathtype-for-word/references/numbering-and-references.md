@@ -27,7 +27,7 @@ The bundled `config/defaults.json` expresses the requested Format Equation Numbe
 | Warn on references | Off |
 | Default for new documents | On in this agent workflow |
 
-The general marker renderer normalizes the visible number to `(1)`, `(2)`, and so on, even if the interactive MathType dialog previously used a section-aware form such as `(1.1)`. This is a renderer policy, not a limitation of native MathType numbering. Package-local edits preserve the original native fields and scheme.
+The marker renderer defaults to simple `(1)`, `(2)` numbering. Set manifest `numbering` to `chapter`, `section`, `chapter_section` or `preserve` to select another native scheme. Only simple mode removes current chapter/section components. Package-local edits preserve the original native fields and scheme.
 
 ## Native number anatomy
 
@@ -45,7 +45,7 @@ The hidden sequence field advances the MathType equation counter. The current-va
 
 MathType may also insert a document setup macrobutton containing hidden reset fields. Preserve it. Do not flatten or unlink these fields.
 
-The bridge calls `MTCommand_InsertEqnNum` first, so MathType creates its full native structure. It then removes only current chapter or section components and their separator from the visible `MTPlaceRef` field. It does not replace the native mechanism.
+In simple mode, the bridge calls `MTCommand_InsertEqnNum` first, so MathType creates its full native structure. It then removes only current chapter or section components and their separator from the newly inserted visible `MTPlaceRef` field. It does not replace the native mechanism. Other modes retain their requested components.
 
 ## Native reference anatomy
 
@@ -82,7 +82,7 @@ They may look similar but are not MathType's numbering/reference implementation.
 After adding, deleting, or moving numbered equations:
 
 1. Update all Word fields.
-2. Verify the `MTEqn` current values are sequential from 1.
+2. Verify the `MTEqn` current values are sequential from 1 within each chapter/section group, or the whole document in simple mode.
 3. Verify every `GOTOBUTTON` target bookmark exists.
 4. Search for `Error! Reference source not found.`
 5. Validate again with the original manifest or an updated manifest.
@@ -91,7 +91,7 @@ Never edit `ZEqnNum...` names manually. MathType owns those bookmarks.
 
 ## Default scope
 
-`configure_mathtype_word_defaults` writes the packaged default profile to `%APPDATA%\MathTypeForWordAgent\defaults.json` and sets MathType's user warning preferences. Every document processed by this bridge uses the profile and is normalized to the requested number form.
+`configure_mathtype_word_defaults` writes the packaged default profile to `%APPDATA%\MathTypeForWordAgent\defaults.json` and sets MathType's user warning preferences. A render manifest selects the document-local format; only simple mode normalizes newly inserted native numbers to `(n)`. Local object edits preserve existing number/reference fields.
 
 The skill does not automate the localized Format Equation Numbers dialog with keystrokes. Documents created manually outside this workflow retain the user's interactive MathType configuration unless the user also selects the same settings in the dialog.
 
@@ -119,4 +119,4 @@ Each output has six editable `Equation.DSMT4` objects, six native numbers, six n
 
 To see the hidden equation chapter/section labels in Word, use Show/Hide ¶. Place new equation breaks outside heading paragraphs used for a table of contents, because copying such headings into a TOC can duplicate breaks; see [official chapter/section guidance](https://docs.wiris.com/en_US/editing-formatting-equations/equation-chapter-section-numbers-suddenly-change).
 
-These results are live tested on Word 16.0 / MathType 7.8.2.441. They demonstrate a native route in the reproducible test; the general render/validate/update MCP interfaces have not yet gained a chapter/section manifest contract. Do not run their simple-number normalization/validator on these chapter-aware outputs, or claim the generic MCP interface already supports this mode. The More Breaks / Modify Break dialogs and arbitrary explicit starting chapter/section values have not been automated by this test.
+These results are live tested on Word 16.0 / MathType 7.8.2.441. The same route is now integrated into render/validate/update MCP interfaces. Render manifests use `numbering` plus `equations[].break_before: none|next_chapter|next_section`; these settings are retained across batches and checkpoints. Standalone validate/update use `numbering_mode: auto` by default, inferring current chapter/section display fields, or accept an explicit mode. Sequence checking restarts per chapter/section group. Existing mixed numbering styles are not automatically reformatted; use a consistent numeric scheme or preserve/review the source. The More Breaks / Modify Break dialogs and arbitrary explicit starting chapter/section values have not been automated by this test.

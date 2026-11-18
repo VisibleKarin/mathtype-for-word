@@ -497,8 +497,8 @@ def format_equations(input_path, output_path, manifest_path, overwrite=False, br
         if set(op) != {"target", "full_size_pt"}:
             raise ValueError("Formatting operations require exactly target and full_size_pt.")
         size = op["full_size_pt"]
-        if isinstance(size, bool) or not isinstance(size, (float, int)) or not math.isfinite(size) or not 1 <= size <= 127:
-            raise ValueError("full_size_pt must be a finite number between 1 and 127.")
+        if size != "match_context" and (isinstance(size, bool) or not isinstance(size, (float, int)) or not math.isfinite(size) or not 1 <= size <= 127):
+            raise ValueError("full_size_pt must be a finite number between 1 and 127, or match_context.")
         target = source.target(op["target"])
         if target["part"] != MAIN:
             raise ValueError("Internal-size formatting currently supports main-document inline equations only.")
@@ -527,6 +527,10 @@ def format_equations(input_path, output_path, manifest_path, overwrite=False, br
         pairs = []
         for target, size in jobs:
             index = target["index"]
+            basis = None
+            if size == "match_context":
+                basis = json.loads((work / f"{index}-target.json").read_text(encoding="utf-8-sig"))
+                size = float(basis["full_size_pt"])
             before = (work / f"{index}-before.mml").read_text(encoding="utf-8-sig")
             saved = (work / f"{index}-saved.mml").read_text(encoding="utf-8-sig")
             if math_tree(before) != math_tree(saved):
@@ -541,6 +545,7 @@ def format_equations(input_path, output_path, manifest_path, overwrite=False, br
             replacement = next(r for r in donor.objects if r["part"] == MAIN and r["index"] == index)
             pairs.append((target, donor, replacement))
             evidence.append({"index": index, "target_full_size_pt": size, "saved_full_size_pt": float(match[1]),
+                             "body_size_source": basis,
                              "mathml_tree_equal": True, "other_preferences_preserved": True,
                              "saved_native_sha256": replacement["native_sha256"]})
         return _publish(source, output_path, pairs, overwrite, evidence)

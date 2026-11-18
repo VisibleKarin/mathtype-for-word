@@ -175,6 +175,10 @@ class LocalEquationTests(unittest.TestCase):
             ml = '<math xmlns="http://www.w3.org/1998/Math/MathML"><msup><mi>x</mi><mn>2</mn></msup></math>'
             for op in job["operations"]:
                 index = op["index"]
+                if op["full_size_pt"] == "match_context":
+                    (work / f"{index}-target.json").write_text(json.dumps({
+                        "full_size_pt": 10.5, "paragraph": 2, "basis": "actual body characters"
+                    }), encoding="utf-8")
                 (work / f"{index}-before.mml").write_text(ml, encoding="utf-8")
                 (work / f"{index}-saved.mml").write_text(changed_math or ml, encoding="utf-8")
                 (work / f"{index}-before.prefs").write_text("[Sizes]\nFull=12 pt\nScript=58 %\n", encoding="utf-8")
@@ -201,6 +205,14 @@ class LocalEquationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "readback"):
                 local.format_equations(self.source, self.output, self.plan, bridge=bridge)
             self.assertFalse(self.output.exists())
+
+    def test_context_size_uses_worker_evidence_and_saved_readback(self):
+        self.write_plan({"target": self.selector(self.src.objects[0]), "full_size_pt": "match_context"})
+        result = local.format_equations(self.source, self.output, self.plan, bridge=self.fake_bridge())
+        row = result["evidence"][0]
+        self.assertEqual(row["target_full_size_pt"], 10.5)
+        self.assertEqual(row["saved_full_size_pt"], 10.5)
+        self.assertEqual(row["body_size_source"]["paragraph"], 2)
 
     def test_invalid_size_and_office_failure_do_not_publish(self):
         for size in (True, float("nan"), -1, 0, 128, "10.5"):
@@ -238,6 +250,28 @@ class LocalEquationTests(unittest.TestCase):
         data = json.loads(result["content"][0]["text"])
         self.assertTrue(data["ok"])
         self.assertEqual(len(data["equations"]), 2)
+
+    def test_native_preflight_is_opt_in_and_connection_failure_is_visible(self):
+        with patch.object(mcp_server, "_invoke_bridge", return_value={"ok": True, "word_ready": True}) as invoke:
+            self.assertTrue(mcp_server._probe_word({})["ok"])
+            self.assertEqual([c.args[0] for c in invoke.call_args_list], ["probe"])
+        with patch.object(mcp_server, "_refuse_during_render_job", return_value=None), patch.object(
+            mcp_server, "_invoke_bridge", side_effect=[{"ok": True, "word_ready": True},
+                {"ok": False, "stage": "connect-sdk", "error": "SDK connect failed", "legacy_vba_format_attempted": False}]
+        ) as invoke:
+            report = mcp_server._probe_word({"check_native_formatting": True})
+            self.assertFalse(report["ok"])
+            self.assertTrue(report["word_ready"])
+            self.assertEqual(report["native_formatting"]["stage"], "connect-sdk")
+            self.assertFalse(report["native_formatting"]["legacy_vba_format_attempted"])
+            self.assertEqual([c.args[0] for c in invoke.call_args_list], ["probe", "probe-native-format"])
+
+    def test_failed_word_probe_does_not_attempt_sdk_or_legacy_formatting(self):
+        with patch.object(mcp_server, "_refuse_during_render_job", return_value=None), patch.object(
+            mcp_server, "_invoke_bridge", return_value={"ok": False, "error": "Word unavailable"}
+        ) as invoke:
+            self.assertFalse(mcp_server._probe_word({"check_native_formatting": True})["ok"])
+            self.assertEqual([c.args[0] for c in invoke.call_args_list], ["probe"])
 
 
 if __name__ == "__main__":

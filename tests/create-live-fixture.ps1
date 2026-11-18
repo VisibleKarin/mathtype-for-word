@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory)][string]$OutputPath,
     # A draft with plain-text mathematics and no markers, for scan and mark.
-    [switch]$PlainText
+    [switch]$PlainText,
+    [switch]$Omml
 )
 
 Set-StrictMode -Version Latest
@@ -16,6 +17,27 @@ try {
     $word.DisplayAlerts = 0
     $document = $word.Documents.Add()
     $selection = $word.Selection
+    if ($Omml) {
+        $document.Styles.Item(-1).Font.Size = 20
+        $selection.Font.Size = 10.5
+        $selection.TypeText('Actual body text is 10.5 pt although Normal is 20 pt.')
+        $selection.TypeParagraph()
+        for ($index=1; $index -le 6; $index++) {
+            $selection.TypeText('x' + $index + '^2')
+            $r=$selection.Paragraphs.Item(1).Range.Duplicate
+            $r.End=$r.End-1
+            $null=$document.OMaths.Add($r)
+            $document.OMaths.Item($index).BuildUp()
+            $selection.SetRange($document.Content.End-1,$document.Content.End-1)
+            $selection.TypeParagraph()
+            $selection.Font.Size=10.5
+            $selection.TypeText('This nearby body paragraph has directly applied 10.5 pt text.')
+            $selection.TypeParagraph()
+        }
+        $selection.TypeText('The first equation is {{EQREF:e1}}; the last is {{EQREF:e6}}.')
+        $document.SaveAs2([IO.Path]::GetFullPath($OutputPath),16)
+        return
+    }
     if ($PlainText) {
         # Word sub/superscripts that plain text loses: in the first two paragraphs, at the end of a table cell, and
         # after the table. Literal carets test mark's escaping for Word Find.

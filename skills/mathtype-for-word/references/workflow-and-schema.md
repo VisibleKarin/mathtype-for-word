@@ -17,7 +17,7 @@ The bridge performs a deterministic transaction:
 2. Require every marker to occur exactly once.
 3. Replace equation markers with TeX delimited for MathType Toggle TeX.
 4. Require exactly one new `Equation.DSMT4` object per equation. When the paragraph has exact line spacing lower than the new object, switch it to at-least spacing with the same value and stop it snapping to the document line grid, which exact spacing ignored. A table row with an exact height that receives an equation becomes an at-least row of the same height, which looks the same while its content fits (`exact_line_spacing`).
-5. For numbered displays, call MathType's native number command and normalize its native fields to `(n)`.
+5. Insert requested native chapter/section breaks before their equations. For numbered displays, call MathType's native number command using the document-local format; normalize to `(n)` only in simple mode.
 6. Replace reference markers through MathType's `MTReference` and `MTPlaceRef` workflow.
 7. Update Word fields.
 8. Save to a temporary sibling file, reopen it read-only, and validate it.
@@ -46,13 +46,16 @@ A partial manifest (`partial_manifest: true`) covers only part of the document: 
 ```json
 {
   "schema_version": 1,
+  "numbering": "simple",
+  "expected_remaining_omml": 0,
   "equations": [
     {
       "id": "stable_ascii_identifier",
       "marker": "{{MATH:stable_ascii_identifier}}",
       "tex": "one-line MathType-compatible TeX",
       "layout": "inline or display",
-      "numbered": false
+      "numbered": false,
+      "break_before": "none"
     }
   ],
   "references": [
@@ -69,6 +72,9 @@ Rules:
 - `schema_version` must equal `1`.
 - `equations` is required. `references` may be empty or omitted.
 - `numbered` defaults to `false` when omitted.
+- `numbering` defaults to `simple`: `(1)`. Other modes are `chapter`: `(1-1)`, `section`: `(1.1)`, `chapter_section`: `(1.1.1)`, and `preserve`: retain the source document's native format. This controls equation numbering, independently of Word sections/headings.
+- `break_before` defaults to `none`; `next_chapter` and `next_section` call MathType's native break commands before that numbered display. They require a chapter/section mode. Chapter-only mode rejects `next_section`; section-only mode rejects `next_chapter`. Specify boundaries explicitly; headings are not automatically interpreted as equation breaks. Arbitrary starting values and interactive More Breaks/Modify Break dialogs are not exposed.
+- `expected_remaining_omml` defaults to `0`. For a selected-object conversion, set the exact count of intentionally unselected Word equations; validation requires that count, rather than accepting arbitrary leftovers. Standalone validate/update accept the same optional argument when no manifest is supplied.
 - Optional top-level `exact_line_spacing`: `"at_least"` (default) or `"keep"`. With `"keep"`, an equation taller than its paragraph's exact line spacing or its table row's exact height stays clipped and validation reports a warning.
 - `id` values are unique, case-sensitive JSON strings; a reference `target` is the same string.
 - All equation and reference markers are unique across the manifest.
@@ -88,6 +94,8 @@ Semantic classes map to schema v1 as follows:
 | `reference` | Not applicable | Not applicable | One unique `references[]` item targeting a `display_numbered` equation |
 
 Read the whole document before finalizing this table. A later semantic reference promotes its target from `display` to `display_numbered`. Multiple reference occurrences may share a target but must use different source markers.
+
+For example, use `numbering: "chapter_section"`, leave the first two equations' `break_before` as `none`, set the third to `next_section`, and the fourth to `next_chapter`. Their numbers become `(1.1.1)`, `(1.1.2)`, `(1.2.1)`, `(2.1.1)`. The complete mode and per-equation boundaries survive batched rendering/checkpoints. A native chapter break resets section and equation numbers; a native section break resets equation numbers.
 
 ## Complete example
 
@@ -155,7 +163,19 @@ Then write a marks file and call `mark_mathtype_document` (bridge action `mark`)
 - `text` is an exact span of that paragraph's text, at most 255 characters with each `^` counted twice; `occurrence` (default 1) picks among repeats within the paragraph. Keep paragraph marks, note references (`\u0002`), objects (`\u0001`) and page, column or section breaks (`\f`, `\u000e`) out of the span; mark rejects them and spans that cover Word equations or fields.
 - For a reference, mark only the parenthesized number, such as `(1)` or `（1）`. A `reference` signal such as `Eq. (2)` only locates it: `Eq.`, `Equation`, and `式` are prose and stay outside the marker, because MathType renders the reference as `(n)` alone.
 - The source is opened read-only and never replaced (`output_path` must differ). Every span is located before any change, overlapping spans are rejected, and the marked copy is saved only when each marker occurs exactly once.
-- A display equation's marker must end up alone in its paragraph, and mark cannot create a paragraph break. Mark the whole paragraph text only when the paragraph holds nothing but the formula. When the formula shares its paragraph with prose (lines joined by Shift+Enter, `\u000b` in the scan text, included), ask the user to give it its own paragraph, or keep the inline layout if the user agrees, then scan again, because paragraph numbers change.
+- A new display marker must be alone in its paragraph. For existing mixed layouts, insert only the replacement object with `layout: "inline", numbered: false` to retain the existing tabs, native number, soft break and explanation; this insertion setting does not make a visibly displayed formula into prose. Ask before changing paragraph boundaries, then scan again if they change. See [Word layout policy](word-layout-policy.md).
+
+For an existing Word equation, use the scan's `word_equation_objects[].omml_index`, not a plain-text span inside its scripts:
+
+```json
+{
+  "schema_version": 1,
+  "source_sha256": "<64-character hash returned by scan>",
+  "marks": [{"omml_index": 1, "marker": "{{MATH:energy}}"}]
+}
+```
+
+This marks the whole selected OMML object. The source hash is mandatory, and fields/comments inside its range require manual review. Inspect source OMML structure and review the TeX; the scan's readable text does not encode every fraction, matrix or script relationship. Unselected OMML stays in place; declare its count in `expected_remaining_omml` when rendering. Ordinary text variables should remain text where appropriate.
 
 Good:
 
@@ -182,6 +202,8 @@ A successful render response reports paths and counts, the numbers and reference
 - Native number count equal to the existing numbers plus the numbered equation count.
 - Native reference count equal to the existing references plus the manifest reference count.
 - No manifest equation whose object holds untranslated TeX (red text) or an unmapped symbol (a diamond).
-- Sequential equation values beginning at 1.
+- Sequential equation values beginning at 1 within each selected chapter/section group (or the whole document in simple mode).
 - No unresolved markers or placeholders.
-- No Word OMath objects under strict MathType output.
+- No Word OMath objects by default, or exactly `expected_remaining_omml` intentionally unselected objects for a local conversion.
+
+Standalone validation and field updates use `numbering_mode: "auto"` by default to infer a consistent numeric scheme from the native number fields, or accept `simple|chapter|section|chapter_section`. They preserve fields; they do not convert mixed source formats into a new scheme. Retain the explicit mode/manifest for non-default checks.

@@ -581,6 +581,9 @@ class MarksFileTests(unittest.TestCase):
             "without paragraph marks, note references": {"schema_version": 1, "marks": [dict(good, text="E = mc2\f")]},
             "objects or breaks": {"schema_version": 1, "marks": [dict(good, text="E\u0002 = mc2")]},
             "each ^ counts twice": {"schema_version": 1, "marks": [dict(good, text="^" * 130 + "x")]},
+            "scanned source_sha256": {"schema_version": 1, "marks": [{"omml_index": 1, "marker": good["marker"]}]},
+            "positive integer": {"schema_version": 1, "source_sha256": "0"*64, "marks": [{"omml_index": True, "marker": good["marker"]}]},
+            "instead of paragraph/text": {"schema_version": 1, "source_sha256": "0"*64, "marks": [dict(good, omml_index=1)]},
         }
         for expected, marks in cases.items():
             with self.subTest(expected=expected):
@@ -666,6 +669,35 @@ class ManifestNormalizationTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("requires TeX", result["error"])
 
+    def test_chapter_breaks_and_local_conversion_survive_batch_normalization(self) -> None:
+        import mathtype_batch
+
+        equation = {"id": "a", "marker": "{{MATH:a}}", "tex": "x", "layout": "display",
+                    "numbered": True, "break_before": "next_section"}
+        code, result = self.check({"schema_version": 1, "numbering": "chapter_section",
+                                  "expected_remaining_omml": 5, "equations": [equation]})
+        self.assertEqual(code, 0, result)
+        normalized = result["manifest"]
+        chunk = mathtype_batch.chunk_manifest(normalized, mathtype_batch.plan_chunks(normalized, 1)[0])
+        self.assertEqual(chunk["numbering"], "chapter_section")
+        self.assertEqual(chunk["expected_remaining_omml"], 5)
+        self.assertEqual(chunk["equations"][0]["break_before"], "next_section")
+
+    def test_invalid_modes_breaks_and_omml_counts_fail_before_word(self) -> None:
+        equation = {"id": "a", "marker": "{{MATH:a}}", "tex": "x", "layout": "display", "numbered": True}
+        cases = [
+            {"numbering": "other"},
+            {"numbering": "simple", "equations": [dict(equation, break_before="next_chapter")]},
+            {"numbering": "chapter", "equations": [dict(equation, break_before="next_section")]},
+            {"numbering": "section", "equations": [dict(equation, break_before="next_chapter")]},
+            {"numbering": "chapter_section", "equations": [dict(equation, break_before="new")]},
+            *[{"expected_remaining_omml": value} for value in (-1, 1.5, True, "5")],
+        ]
+        for extra in cases:
+            with self.subTest(extra=extra):
+                code, result = self.check({"schema_version": 1, "equations": [equation], **extra})
+                self.assertEqual(code, 1, result)
+
     def test_malformed_shapes_are_rejected_before_any_word_session(self) -> None:
         equation = {"id": "a", "marker": "{{MATH:a}}", "tex": "x", "layout": "inline"}
         numbered = dict(equation, id=3, layout="display", numbered=True)
@@ -689,8 +721,8 @@ class ManifestNormalizationTests(unittest.TestCase):
         code, result = run_bridge("-Action", "check-manifest", "-ManifestPath", str(path))
         self.assertEqual(code, 0, result)
         self.assertEqual(result["manifest"], {
-            "schema_version": 1, "exact_line_spacing": "at_least",
-            "equations": [{"id": "a", "marker": "{{MATH:a}}", "tex": "x", "layout": "display", "numbered": True}],
+            "schema_version": 1, "numbering": "simple", "expected_remaining_omml": 0, "exact_line_spacing": "at_least",
+            "equations": [{"break_before": "none", "id": "a", "marker": "{{MATH:a}}", "tex": "x", "layout": "display", "numbered": True}],
             "references": [{"marker": "{{EQREF:a}}", "target": "a"}],
         })
 

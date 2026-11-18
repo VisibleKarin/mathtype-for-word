@@ -19,7 +19,7 @@ Create real MathType equations in DOCX and PPTX, preserving MathType-native Word
 - Numbered displays use MathType `MACROBUTTON MTPlaceRef` and `SEQ MTEqn` fields.
 - References use `MTCommand_InsertEqnRef`, its `MTReference` placeholder, and the target number's `MTPlaceRef` action. A resolved reference is a `GOTOBUTTON` containing a nested `REF` to a `ZEqnNum...` bookmark.
 - The default number format is simple Arabic equation number only: `(1)`, `(2)`, `(3)`, with chapter and section components disabled.
-- The legacy marker render uses simple `(n)` numbering starting at 1. Existing-document local edits preserve the source numbering scheme and fields. Refresh fields when their order or targets change; formatting alone does not require a field update.
+- Marker rendering supports `numbering: simple|chapter|section|chapter_section|preserve`; the default stays simple for compatibility. Existing-document local edits preserve the source numbering scheme and fields. Refresh fields when their order or targets change; formatting alone does not require a field update.
 - Never substitute Word numbered lists, captions, `SEQ Equation`, OMath, images, or manually typed numbers for requested MathType equations/fields. Ordinary prose variables and Word sub/superscripts may remain text. Use a fallback for requested equations only when explicitly accepted and clearly labeled.
 - PowerPoint equations are centered, floating `Equation.DSMT4` OLE objects. PowerPoint has no MathType-native equivalent of Word's equation-number/reference fields, so do not imitate them with typed numbers or links.
 - Keep each symbol's mathematical role and font style consistent across display equations, inline math, prose, captions, and definitions.
@@ -49,16 +49,18 @@ Create real MathType equations in DOCX and PPTX, preserving MathType-native Word
 
 ## Mandatory Word workflow
 
+Read [Word layout and conversion policy](references/word-layout-policy.md) for this fork's defaults: actual body-size matching, plain-text simple inline math, MathType displays, tab stops, grid/baseline preservation and user-confirmed continuation breaks.
+
 Choose the operation before using the marker renderer. For internal-size changes or replacement of existing objects, follow [local-equation-edits.md](references/local-equation-edits.md). That path preserves mixed paragraphs, soft-break explanations, comments, bookmarks and existing native fields; it does not require rebuilding the document or renumbering from 1. General structure-changing edits inside the same OLE identity are not implemented.
 
 1. Preserve the input DOCX and choose an explicit output path.
 2. Call `probe_mathtype_word` once per task, not before every render. Stop on a failed prerequisite; report the exact failed check.
-3. Scan the complete document twice. First inventory every equation candidate and later prose reference. Then classify each candidate as `inline`, `display`, or `display_numbered`, and each prose occurrence as `reference`, using [academic-equation-style.md](references/academic-equation-style.md). Decide every identifier, unique marker, TeX, layout, numbered state, reference marker, and target. When the draft holds plain-text mathematics or placeholders instead of `{{MATH:…}}` markers, call `scan_mathtype_candidates` first: it lists Word's paragraph numbers, the exact paragraph text, and math signals, including sub/superscripts that plain text loses. Then write a marks file and call `mark_mathtype_document` to save a marked copy, and render that copy. For a reference, mark only the number, such as `(1)`; `Eq.` or `式` stays in the prose. A display equation's marker must end up alone in its paragraph: mark the whole paragraph text only when the paragraph holds nothing but the formula. When a display formula shares its paragraph with prose (lines joined by Shift+Enter included), ask the user to put it in its own paragraph, or keep it inline if the user agrees, and scan again before marking.
+3. Inventory the whole document's equation candidates and later prose references, then classify them as `inline`, `display`, `display_numbered` or `reference` using [academic-equation-style.md](references/academic-equation-style.md). Prefer ordinary characters for simple inline math. For unmarked text or OMML, call `scan_mathtype_candidates`, review the mathematical structure and TeX, then use `mark_mathtype_document` to save a marked copy. OMML marks use the scan's one-based object index and source hash; plain-text marks use exact paragraph spans. For a reference, mark only `(1)`; `Eq.` or `式` stays in the prose. New display markers must be alone in their paragraph. Preserve existing mixed paragraphs by inserting only the replacement object (`layout: inline, numbered: false`) or using a local donor replacement, retaining native fields, tabs and soft breaks. Ask before joining/splitting paragraphs and rescan if boundaries change. See [Word layout policy](references/word-layout-policy.md) for the decision and marking contract.
 4. Create a schema v1 JSON manifest. Read [workflow-and-schema.md](references/workflow-and-schema.md) for the exact contract and examples.
 5. For mathematical typography, apply [academic-equation-style.md](references/academic-equation-style.md) within the requested scope. Follow the user's language and template for lead-ins, definitions, paragraph breaks and numbering. Report missing definitions when relevant; an equation edit does not authorize rewriting scientific prose or reformatting the whole manuscript.
 6. Call `render_mathtype_word_document`. Do not edit the same DOCX concurrently in Word. Manifests whose equations plus references exceed `batch_size` (default 40) render in fresh Word sessions with checkpoints; a foreground render runs all of them in one tool call, which can outlast the client's time limit (Codex: 1200 s with the plugin), so for such manifests pass `background: true` and poll `get_mathtype_render_status` while its status is `queued` or `running`, and stop on any other status. On `interrupted`, call render again with the same paths (and `background: true` again) to resume from the last checkpoint. On `failed`, read `error` first: a bad marker, TeX, or validation result needs a corrected manifest or document, which starts the job over.
 7. Read the render result's `validation` (for a background job, `result.validation` from `get_mathtype_render_status` once it is `completed`). The bridge validates the saved file against the whole manifest before it publishes the output, so a successful render already carries the `ok: true` report; do not call `validate_mathtype_word_document` again for it. A render is incomplete until that report is `ok: true`. Call the validate tool only to re-check a document changed later, with the same manifest and the render's `existing_number_fields` and `existing_references`.
-8. Validation reads every saved equation and rejects one whose TeX MathType did not translate (red literal text) or whose symbol it could not map (a diamond), naming the equation and its TeX, and for red text the untranslated command. For complex fractions, matrices, accents, or nested scripts, still open/render the result and visually inspect the layout. Structural checks cannot prove typographic correctness.
+8. Unless size preservation is requested, inspect the generated/replaced objects and format only those targets to destination body size with the local Full-size workflow. Keep its saved readback/structure report with the render's native-field report. Rendering itself uses MathType's current preferences; it does not automatically set Full. Validation rejects untranslated TeX (red text) and unmapped symbols (diamonds), but complex fractions, matrices, accents or nested scripts still need page inspection. Structural checks cannot prove typographic correctness.
 9. Report the output path, counts, native number/reference mechanism, validation result, and any limitations.
 
 ## Mandatory PowerPoint workflow
@@ -77,8 +79,8 @@ Use the bundled local MCP server when available:
 
 - `probe_mathtype_word`: read-only prerequisite check.
 - `configure_mathtype_word_defaults`: persist the packaged default profile and MathType warning preferences. Invoke only when the user asks to configure defaults or during an explicitly requested installation.
-- `scan_mathtype_candidates`: read-only scan of a draft for plain-text mathematics; writes a candidates JSON.
-- `mark_mathtype_document`: replace exact text spans with markers in a new DOCX; all marks apply or nothing is saved.
+- `scan_mathtype_candidates`: read-only scan for text mathematics and indexed Word equations; writes candidates and a source hash.
+- `mark_mathtype_document`: replace exact text spans or selected complete OMML objects with markers in a new DOCX; all marks apply or nothing is saved.
 - `render_mathtype_word_document`: marker-driven conversion and reference placement; batched, resumable, and optionally in the background.
 - `get_mathtype_render_status`: progress, log tail, and final result of a render job, keyed by its output path.
 - `validate_mathtype_word_document`: read-only structural validation.
@@ -136,14 +138,15 @@ The bundled default mirrors the requested Format Equation Numbers configuration:
 - Warn when inserting equation references off.
 - Use format as default for new documents on within this agent workflow.
 
-The bridge temporarily suppresses blocking dialogs during headless automation, restores the user's warning preferences afterward, and normalizes MathType's native field structure to `(n)`. Read [numbering-and-references.md](references/numbering-and-references.md) before diagnosing or manually repairing a field.
+The bridge temporarily suppresses blocking dialogs during headless automation and restores the user's warning preferences afterward. It writes the requested native format to the document only; standalone validation/update can infer the existing scheme. It normalizes to `(n)` only in simple mode. Read [numbering-and-references.md](references/numbering-and-references.md) before diagnosing or manually repairing a field.
 
 ## Editing existing documents
 
 - Inspect existing objects and use the local edit tools for replacement or internal size. Use markers for new equations; the marker renderer cannot directly rewrite an existing OLE object's internals.
-- Choose target pt from the user/template or an unambiguous body style and record that basis in the task report. Do not infer it from an equation, title, caption or mixed-size range. Pass explicit `full_size_pt`; automatic style inference is not implemented.
+- Unless the user asks to preserve internal size, match the destination body size after rendering/replacement. Choose an explicit user/template pt or `full_size_pt: "match_context"` and retain the returned paragraph/basis evidence. Do not infer it from an equation, title or caption; ambiguous context requires an explicit pt value.
 - Word font size, `ScaleWidth`/`ScaleHeight`, and visual shrinkage are not internal-size evidence. A zero scale readback does not establish 100% scaling. Require the saved internal Full-size report.
 - Local formatting changes only Full, preserving the object's other saved preferences. Never change global MathType defaults to format a single document.
+- For internal Full-size work, call `probe_mathtype_word` with `check_native_formatting: true` and require its `native_formatting.ok`. Start with `format_mathtype_equations`, which uses the installed native SDK directly. Do not first attempt `MTFormatEquations.DoFormatEquations`, `MTInitAPI`, or repair DLL paths by trial and error: that auxiliary VBA/WLL formatting path failed on the tested 7.8.2 host. This is not evidence that ordinary Toggle TeX/number/reference macros are unusable. See [local-equation-edits.md](references/local-equation-edits.md#first-use-and-sdk-preflight).
 - Rendering converts only the marked ranges: existing MathType objects stay byte-identical, and validation expects the document's existing numbers and references plus the manifest's (`existing_number_fields` and `existing_references` in the render result).
 - Never use broad find/replace on TeX fragments or equation text.
 - After reordering or deleting numbered equations, call `update_mathtype_word_fields`, then validate again.
@@ -169,12 +172,12 @@ The screenshot-level workflow also includes symbol palettes, equation browsing, 
 Treat any of these as a failed deliverable:
 
 - Missing `Equation.DSMT4` objects.
-- Any Word built-in `OMath` object when the requested equations must all be MathType.
+- Any Word built-in `OMath` object when the requested equations must all be MathType; for a local conversion, a count different from the manifest's explicit `expected_remaining_omml`.
 - A numbered equation without `MACROBUTTON MTPlaceRef`, hidden/current `SEQ MTEqn`, or parentheses.
-- A current `MTSec` or `MTChap` component when the legacy simple-number renderer was requested. These components are legitimate for MathType chapter/section numbering.
+- A current `MTSec` or `MTChap` component when simple-number mode was requested. These components are legitimate for MathType chapter/section numbering.
 - A reference without `GOTOBUTTON`, nested `REF`, or a live `ZEqnNum...` bookmark.
 - Remaining `{{MATH:...}}`, `{{EQREF:...}}`, or `equation reference goes here` text.
-- Non-sequential equation values starting from 1 in the legacy simple-number mode. Chapter/section numbering restarts according to its native breaks.
+- Non-sequential equation values starting from 1 in simple-number mode. Chapter/section numbering restarts according to its native breaks.
 - `Error! Reference source not found.`
 - A manifest equation whose MathType object holds untranslated TeX (red text) or an unmapped symbol (a diamond).
 
@@ -190,6 +193,7 @@ Treat any of these as a failed deliverable:
 
 ## Reference routing
 
+- Word inline/display, grid/baseline, OMML conversion and continuation policy: [word-layout-policy.md](references/word-layout-policy.md)
 - Existing-object inspection, internal size, local replacement and mixed paragraphs: [local-equation-edits.md](references/local-equation-edits.md)
 - Manifest design and end-to-end examples: [workflow-and-schema.md](references/workflow-and-schema.md)
 - Native field anatomy and Format Equation Numbers behavior: [numbering-and-references.md](references/numbering-and-references.md)

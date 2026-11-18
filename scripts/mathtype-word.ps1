@@ -2,12 +2,16 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('probe', 'probe-pptx', 'configure-defaults', 'check-manifest', 'scan', 'mark', 'render', 'validate', 'update', 'render-pptx', 'validate-pptx', 'cleanup', 'format-native')]
+    [ValidateSet('probe', 'probe-pptx', 'configure-defaults', 'check-manifest', 'scan', 'mark', 'render', 'validate', 'update', 'render-pptx', 'validate-pptx', 'cleanup', 'format-native', 'probe-native-format')]
     [string]$Action,
 
     [string]$InputPath,
     [string]$OutputPath,
     [string]$ManifestPath,
+    [ValidateSet("auto", "simple", "chapter", "section", "chapter_section", "preserve")]
+    [string]$NumberingMode = "auto",
+    [ValidateRange(0, 2147483647)]
+    [int]$ExpectedRemainingOmml = 0,
     [ValidatePattern('^[0-9a-fA-F]{32}$')]
     [string]$RunToken,
     [switch]$Overwrite,
@@ -76,6 +80,7 @@ $script:AnchorPrefix = '_MTEq'
 $script:LineSpacingTolerancePoints = 0.5
 $script:LineSpacingRepairs = [System.Collections.Generic.List[string]]::new()
 # Numbers and references from before this render: validation expects them plus the manifest's.
+$script:ActiveNumberingMode = $NumberingMode
 $script:BaselineNumberFields = 0
 $script:BaselineReferences = 0
 # Objects with untranslated TeX or diamonds in a render's input; -1 outside a render.
@@ -809,7 +814,7 @@ function Read-Manifest {
     $manifest = Get-Content -Raw -LiteralPath $resolved | ConvertFrom-Json -NoEnumerate
     if ($manifest -isnot [System.Management.Automation.PSCustomObject]) { throw 'Manifest must be a JSON object.' }
     Add-MissingProperties -InputObject $manifest -Defaults @{
-        schema_version = $null; equations = $null; references = $null; exact_line_spacing = 'at_least'; external_targets = @()
+        schema_version = $null; equations = $null; references = $null; exact_line_spacing = 'at_least'; external_targets = @(); numbering = 'simple'; expected_remaining_omml = 0
     }
     if ($manifest.schema_version -ne 1) { throw 'Manifest schema_version must be 1.' }
     if ($manifest.equations -isnot [array]) { throw 'Manifest must contain an equations array.' }
@@ -818,7 +823,7 @@ function Read-Manifest {
     if ($manifest.external_targets -isnot [array]) { throw 'Manifest external_targets must be an array.' }
     foreach ($equation in $manifest.equations) {
         if ($equation -isnot [System.Management.Automation.PSCustomObject]) { throw 'Every manifest equation must be a JSON object.' }
-        Add-MissingProperties -InputObject $equation -Defaults @{ id = $null; marker = $null; tex = $null; layout = $null; numbered = $false }
+        Add-MissingProperties -InputObject $equation -Defaults @{ id = $null; marker = $null; tex = $null; layout = $null; numbered = $false; break_before = 'none' }
     }
     foreach ($reference in $manifest.references) {
         if ($reference -isnot [System.Management.Automation.PSCustomObject]) { throw 'Every manifest reference must be a JSON object.' }
@@ -829,6 +834,8 @@ function Read-Manifest {
 
 function Assert-Manifest {
     param([Parameter(Mandatory)]$Manifest)
+    if (@('simple','chapter','section','chapter_section','preserve') -notcontains [string]$Manifest.numbering) { throw 'Invalid numbering mode.' }
+    if (($Manifest.expected_remaining_omml -isnot [int] -and $Manifest.expected_remaining_omml -isnot [long]) -or $Manifest.expected_remaining_omml -lt 0) { throw 'expected_remaining_omml must be a nonnegative integer.' }
     $ids = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     # Invoke-Render keys number fields in a case-insensitive hashtable: "E1" and "e1" would share one field.
     $foldedIds = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -848,6 +855,12 @@ function Assert-Manifest {
             throw "Equation '$($equation.id)' cannot be numbered unless layout is display."
         }
         if ([string]$equation.tex -match '[\r\n]') { throw "Equation '$($equation.id)' TeX must be one line." }
+        if (@('none','next_chapter','next_section') -notcontains [string]$equation.break_before) { throw "Invalid break_before for '$($equation.id)'." }
+        if ($equation.break_before -ne 'none') {
+            if (-not $equation.numbered -or $Manifest.numbering -eq 'simple') { throw 'Equation breaks require a numbered display and chapter/section numbering.' }
+            if (($Manifest.numbering -eq 'chapter' -and $equation.break_before -eq 'next_section') -or ($Manifest.numbering -eq 'section' -and $equation.break_before -eq 'next_chapter')) { throw 'break_before conflicts with numbering mode.' }
+        }
+
     }
     if (@('at_least', 'keep') -notcontains [string]$Manifest.exact_line_spacing) {
         throw 'exact_line_spacing must be "at_least" or "keep".'
@@ -1219,10 +1232,38 @@ function Get-AnchorCount {
     }
 }
 
+function Set-EquationTabStops {
+    param($Shape)
+    $paragraph = $Shape.Range.Paragraphs.Item(1)
+    $setup = $Shape.Range.Sections.Item(1).PageSetup
+    $width = $setup.PageWidth - $setup.LeftMargin - $setup.RightMargin
+    if ($setup.GutterPos -ne 1) { $width -= $setup.Gutter }
+    if ($Shape.Range.Information($script:WdWithInTable)) {
+        $cell = $Shape.Range.Cells.Item(1)
+        $width = $cell.Width - $cell.LeftPadding - $cell.RightPadding
+        Release-ComObject $cell
+    } elseif ($setup.TextColumns.Count -gt 1) {
+        if (-not $setup.TextColumns.EvenlySpaced) { throw 'Unequal-width columns require an explicitly reviewed equation layout.' }
+        $width = $setup.TextColumns.Item(1).Width
+    }
+    $left = $paragraph.Format.LeftIndent
+    $width -= $left + $paragraph.Format.RightIndent
+    if ($width -le 0) { throw 'The formula paragraph has no usable line width.' }
+    $paragraph.Format.FirstLineIndent = 0
+    $paragraph.Format.TabStops.ClearAll()
+    $null = $paragraph.Format.TabStops.Add($left + $width / 2, 1)
+    $null = $paragraph.Format.TabStops.Add($left + $width, 2)
+    Release-ComObject $setup
+    Release-ComObject $paragraph
+}
+
 function Convert-Equation {
     param([Parameter(Mandatory)]$Equation, [switch]$RepairExactHeights, [switch]$AnchorNumber)
     Write-Log -Level INFO -Message "Converting equation '$($Equation.id)' as $($Equation.layout), numbered=$([bool]$Equation.numbered)."
     $markerRange = Find-UniqueMarkerRange -Marker ([string]$Equation.marker)
+    if ($Equation.layout -eq 'display' -and ([string]$markerRange.Paragraphs.Item(1).Range.Text).Replace([string]$Equation.marker,'').Trim("`r","`a","`t",' ') -ne '') {
+        throw 'A new display marker must be on its own paragraph; preserve an existing mixed paragraph with object-only inline placement or a local replacement.'
+    }
     $position = $markerRange.Start
     $delimited = if ([string]$Equation.layout -eq 'inline') {
         '$' + [string]$Equation.tex + '$'
@@ -1241,6 +1282,7 @@ function Convert-Equation {
         throw "Toggle TeX did not add exactly one MathType object for '$($Equation.id)'."
     }
     $shape = Get-MathTypeShapeNear -Position $position
+    if ($Equation.layout -eq 'display') { Set-EquationTabStops -Shape $shape }
     Release-ComObject $markerRange
     if ($RepairExactHeights) {
         Repair-ClippedLineSpacing -Shape $shape -EquationId ([string]$Equation.id)
@@ -1258,8 +1300,8 @@ function Convert-Equation {
         $null = $script:Word.Run('MTCommand_InsertEqnNum')
         Write-Log -Level INFO -Message "Equation-number insertion returned for '$($Equation.id)'."
         $numberField = Find-NearestNumberField -Position $insertPosition
-        Normalize-SimpleNumberField -NumberField $numberField
-        Write-Log -Level INFO -Message "Normalized native number for '$($Equation.id)' to simple parenthesized format."
+        if ($script:ActiveNumberingMode -eq 'simple') { Normalize-SimpleNumberField -NumberField $numberField }
+        Write-Log -Level INFO -Message "Created native number for '$($Equation.id)' using the requested format."
         Release-ComObject $paragraph
         if ($AnchorNumber) {
             $paragraph = $shape.Range.Paragraphs.Item(1)
@@ -1719,7 +1761,7 @@ function Invoke-CheckManifest {
     $equations = @(foreach ($equation in $manifest.equations) {
             [ordered]@{
                 id = [string]$equation.id; marker = [string]$equation.marker; tex = [string]$equation.tex
-                layout = [string]$equation.layout; numbered = [bool]$equation.numbered
+                layout = [string]$equation.layout; numbered = [bool]$equation.numbered; break_before = [string]$equation.break_before
             }
         })
     $references = @(foreach ($reference in $manifest.references) {
@@ -1735,6 +1777,8 @@ function Invoke-CheckManifest {
         exact_line_spacing = [string]$manifest.exact_line_spacing
         manifest = [ordered]@{
             schema_version = 1
+            numbering = [string]$manifest.numbering
+            expected_remaining_omml = [int]$manifest.expected_remaining_omml
             exact_line_spacing = [string]$manifest.exact_line_spacing
             equations = $equations
             references = $references
@@ -1837,11 +1881,13 @@ function Invoke-Scan {
             $found[$run.paragraph].Add([ordered]@{ kind = $run.kind; text = $run.text; offset = $run.offset; note_reference = $run.note_reference })
         }
         $equations = @{}
+        $wordEquationObjects = @()
         for ($index = 1; $index -le $script:Document.OMaths.Count; $index++) {
             $omath = $script:Document.OMaths.Item($index)
             $paragraph = Find-ParagraphIndex -Spans $spans -Position $omath.Range.Start
             if (-not $equations.ContainsKey($paragraph)) { $equations[$paragraph] = [System.Collections.Generic.List[string]]::new() }
             $equations[$paragraph].Add([string]$omath.Range.Text)
+            $wordEquationObjects += [ordered]@{omml_index=$index;paragraph=$paragraph;text=[string]$omath.Range.Text}
             Release-ComObject $omath
         }
         $paragraphs = [System.Collections.Generic.List[object]]::new()
@@ -1875,6 +1921,8 @@ function Invoke-Scan {
         }
         $candidates = [ordered]@{
             schema = 'mathtype-for-word-scan/1'
+            source_sha256 = (Get-FileHash -LiteralPath $input -Algorithm SHA256).Hash.ToLowerInvariant()
+            word_equation_objects = $wordEquationObjects
             document_path = $input
             paragraphs_total = $spans.Count
             existing_markers = [regex]::Matches($plainText, '\{\{(?:MATH|EQREF):').Count
@@ -1907,14 +1955,20 @@ function Read-Marks {
     $resolved = Resolve-ExistingFile -Path $Path -Label 'MarksPath'
     $document = Get-Content -Raw -LiteralPath $resolved | ConvertFrom-Json -NoEnumerate
     if ($document -isnot [System.Management.Automation.PSCustomObject]) { throw 'Marks file must be a JSON object.' }
-    Add-MissingProperties -InputObject $document -Defaults @{ schema_version = $null; marks = $null }
+    Add-MissingProperties -InputObject $document -Defaults @{ schema_version = $null; marks = $null; source_sha256 = $null }
     if ($document.schema_version -ne 1) { throw 'Marks file schema_version must be 1.' }
     if ($document.marks -isnot [array] -or $document.marks.Count -eq 0) { throw 'Marks file must contain a non-empty marks array.' }
     $markers = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($mark in $document.marks) {
         if ($mark -isnot [System.Management.Automation.PSCustomObject]) { throw 'Every mark must be a JSON object.' }
-        Add-MissingProperties -InputObject $mark -Defaults @{ paragraph = $null; text = $null; occurrence = 1; marker = $null }
+        Add-MissingProperties -InputObject $mark -Defaults @{ paragraph = $null; text = $null; occurrence = 1; marker = $null; omml_index = $null }
         $label = "Mark '$($mark.marker)'"
+        if ($null -ne $mark.omml_index) {
+            if (-not ($mark.omml_index -is [int] -or $mark.omml_index -is [long]) -or $mark.omml_index -lt 1) { throw 'omml_index must be a positive integer.' }
+            if ($document.source_sha256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'OMML marks require the scanned source_sha256.' }
+            if ($null -ne $mark.paragraph -or $null -ne $mark.text) { throw 'OMML marks use omml_index instead of paragraph/text.' }
+            $mark | Add-Member -NotePropertyName source_sha256 -NotePropertyValue $document.source_sha256
+        } else {
         if (-not ($mark.paragraph -is [long] -or $mark.paragraph -is [int]) -or $mark.paragraph -lt 1) { throw "$label requires a paragraph number from 1." }
         if (-not ($mark.occurrence -is [long] -or $mark.occurrence -is [int]) -or $mark.occurrence -lt 1) { throw "$label requires an occurrence from 1." }
         # Tab and manual line break (\v) may go; paragraph marks, note references (\u0002), objects (\u0001) and page,
@@ -1924,6 +1978,7 @@ function Read-Marks {
         }
         if ($mark.text.Replace('^', '^^').Length -gt $script:FindTextLimit) {
             throw "$label text is longer than $($script:FindTextLimit) characters (each ^ counts twice); mark a shorter unique part."
+        }
         }
         if ($mark.marker -isnot [string] -or $mark.marker -notmatch $script:MarkerPattern) {
             throw "Every marker must read {{MATH:id}} or {{EQREF:id}}: $($mark.marker)"
@@ -1986,6 +2041,8 @@ function Invoke-Mark {
     $output = Resolve-OutputFile -Path $OutputPath
     if ([string]::Equals($output, $input, [StringComparison]::OrdinalIgnoreCase)) { throw 'mark writes a new DOCX; OutputPath must differ from InputPath.' }
     $marks = Read-Marks -Path $MarksPath
+    $ommlMarks = @($marks | Where-Object { $null -ne $_.omml_index })
+    if ($ommlMarks.Count -gt 0 -and (Get-FileHash -LiteralPath $input -Algorithm SHA256).Hash -ine $ommlMarks[0].source_sha256) { throw 'Source changed since the OMML scan.' }
     try {
         # Read-only: the source is never saved, and a copy the user has open in Word does not block this.
         Start-Word -ReadOnly -DocumentPath $input
@@ -1996,6 +2053,15 @@ function Invoke-Mark {
         $spans = Get-ParagraphSpans
         # Locate every span before changing anything, so positions refer to the unedited document.
         $targets = foreach ($mark in $marks) {
+            if ($null -ne $mark.omml_index) {
+                if ($mark.omml_index -gt $script:Document.OMaths.Count) { throw 'OMML target not found.' }
+                $probe = $script:Document.OMaths.Item([int]$mark.omml_index).Range.Duplicate
+                try {
+                    if ($probe.Fields.Count -gt 0 -or $probe.Comments.Count -gt 0) { throw 'OMML target contains fields or comments; review the range before conversion.' }
+                    [pscustomobject]@{start=$probe.Start;end=$probe.End;marker=[string]$mark.marker}
+                } finally { Release-ComObject $probe }
+                continue
+            }
             if ($mark.paragraph -gt $spans.Count) { throw "Paragraph $($mark.paragraph) does not exist; the document has $($spans.Count)." }
             $span = $spans[[int]$mark.paragraph - 1]
             $position = Find-TextInRange -Start $span.start -End $span.end -Text $mark.text -Occurrence ([int]$mark.occurrence)
@@ -2020,7 +2086,10 @@ function Invoke-Mark {
         # Last first: replacing a span never moves one that is still to be replaced.
         foreach ($target in @($ordered | Sort-Object start -Descending)) {
             $range = $script:Document.Range($target.start, $target.end)
+            # Replace the complete contents while the OMath range is intact, then remove the empty structure.
+            # Removing first would collapse the range to its base token and leave old scripts behind.
             $range.Text = $target.marker
+            if ($range.OMaths.Count -gt 0) { $range.OMaths.Item(1).Remove() }
             $range.Font.Subscript = 0
             $range.Font.Superscript = 0
             Release-ComObject $range
@@ -2059,10 +2128,22 @@ function Invoke-Render {
     try {
         Start-Word -DocumentPath $input
         Write-Log -Level INFO -Message "Opened input DOCX: $input"
+        $script:ActiveNumberingMode = [string]$manifest.numbering
+        if ($manifest.numbering -ne 'preserve') {
+            $format = switch ($manifest.numbering) { 'simple' {'(#E1)'} 'chapter' {'(#C1-#E1)'} 'section' {'(#S1.#E1)'} 'chapter_section' {'(#C1.#S1.#E1)'} }
+            if ($script:Word.Run('MTLib.WriteDocPropString', $script:Document, 'MTEquationNumber2', $format) -ne 0) { throw 'Could not set document-local MathType numbering format.' }
+        }
         $existing = Get-NativeFieldCounts
         $script:BaselineNumberFields = if ($ExistingNumberFields -ge 0) { $ExistingNumberFields } else { $existing.numbers }
         $script:BaselineReferences = if ($ExistingReferences -ge 0) { $ExistingReferences } else { $existing.references }
         foreach ($equation in @($manifest.equations)) {
+            if ($equation.break_before -ne 'none') {
+                $marker = Find-UniqueMarkerRange -Marker $equation.marker
+                $script:Selection.SetRange($marker.Paragraphs.Item(1).Range.Start, $marker.Paragraphs.Item(1).Range.Start)
+                $command = if ($equation.break_before -eq 'next_chapter') {'MTCommand_InsertNextChapter'} else {'MTCommand_InsertNextSection'}
+                $null = $script:Word.Run($command)
+                Release-ComObject $marker
+            }
             $numberField = Convert-Equation -Equation $equation -RepairExactHeights:$repairExactHeights -AnchorNumber:$AnchorNumbers
             if ($null -ne $numberField) {
                 $numberFields[[string]$equation.id] = $numberField
@@ -2096,7 +2177,7 @@ function Invoke-Render {
         references = @($manifest.references).Count
         existing_number_fields = $script:BaselineNumberFields
         existing_references = $script:BaselineReferences
-        number_format = '(1), (2), (3), ...'
+        number_format = [string]$manifest.numbering
         reference_mechanism = 'MathType-native GOTOBUTTON/REF fields'
         line_spacing_changed_for = @($script:LineSpacingRepairs)
         row_height_changed_for = @($script:RowHeightRepairs)
@@ -2226,6 +2307,14 @@ function Get-ValidationReport {
         $errors.Add("$anchors cross-session anchor bookmark(s) of an unfinished batched render remain.")
     }
 
+    $mode = if ($null -ne $Manifest) { [string]$Manifest.numbering } else { $script:ActiveNumberingMode }
+    if ($mode -in @('auto','preserve')) {
+        $allCodes = ($script:Document.Fields | ForEach-Object { [string]$_.Code.Text }) -join ' '
+        $hasChapter = $allCodes -match 'SEQ\s+MTChap\s+\\c'
+        $hasSection = $allCodes -match 'SEQ\s+MTSec\s+\\c'
+        $mode = if ($hasChapter -and $hasSection) {'chapter_section'} elseif ($hasChapter) {'chapter'} elseif ($hasSection) {'section'} else {'simple'}
+    }
+    $labels = @()
     $numberFields = @()
     $numberValues = @()
     $referenceTargets = @()
@@ -2234,9 +2323,17 @@ function Get-ValidationReport {
         $code = $field.Code.Text
         if ($code -match '^\s*MACROBUTTON\s+MTPlaceRef\b') {
             $numberFields += $code
+            $visible = $field.Code.Duplicate
+            $visible.TextRetrievalMode.IncludeFieldCodes = $false
+            $visible.TextRetrievalMode.IncludeHiddenText = $false
+            $label = [regex]::Match([string]$visible.Text, '\([0-9.-]+\)').Value
+            $labels += $label
+            Release-ComObject $visible
+            if ($mode -in @('chapter','chapter_section') -and $code -notmatch 'SEQ\s+MTChap\s+\\c') { $errors.Add('Native chapter component missing.') }
+            if ($mode -in @('section','chapter_section') -and $code -notmatch 'SEQ\s+MTSec\s+\\c') { $errors.Add('Native section component missing.') }
             if ($code -notmatch 'SEQ\s+MTEqn\s+\\h') { $errors.Add("Number field $index lacks hidden MTEqn sequence increment.") }
             if ($code -notmatch 'SEQ\s+MTEqn\s+\\c') { $errors.Add("Number field $index lacks current MTEqn sequence display.") }
-            if ($code -match 'SEQ\s+(MTSec|MTChap)\s+\\c') { $errors.Add("Number field $index contains chapter or section display.") }
+            if ($mode -eq 'simple' -and $code -match 'SEQ\s+(MTSec|MTChap)\s+\\c') { $errors.Add("Number field $index contains chapter or section display.") }
             if ($code -notmatch '\(' -or $code -notmatch '\)') { $errors.Add("Number field $index is not enclosed in parentheses.") }
             if ($code -match '\([.:-]') { $errors.Add("Number field $index contains a residual separator after the opening parenthesis.") }
             $numberParagraph = $field.Code.Paragraphs.Item(1)
@@ -2265,10 +2362,24 @@ function Get-ValidationReport {
         Release-ComObject $field
     }
 
-    for ($position = 0; $position -lt $numberValues.Count; $position++) {
+    for ($position = 0; $mode -eq 'simple' -and $position -lt $numberValues.Count; $position++) {
         if ($numberValues[$position] -ne ($position + 1)) {
             $errors.Add("Equation numbers are not sequential from 1: $($numberValues -join ', ').")
             break
+        }
+    }
+    if ($mode -ne 'simple') {
+        $groups = @{}
+        $pattern = if ($mode -eq 'chapter_section') { '^\((\d+)\.(\d+)\.(\d+)\)$' } elseif ($mode -eq 'chapter') { '^\((\d+)-(\d+)\)$' } else { '^\((\d+)\.(\d+)\)$' }
+        foreach ($label in $labels) {
+            $match = [regex]::Match($label, $pattern)
+            if (-not $match.Success) { $errors.Add("Number '$label' does not match mode $mode."); continue }
+            $last = $match.Groups.Count - 1
+            $group = ($match.Groups[1..($last-1)] | ForEach-Object { $_.Value }) -join '.'
+            $value = [int]$match.Groups[$last].Value
+            $expected = if ($groups.ContainsKey($group)) { [int]$groups[$group] + 1 } else { 1 }
+            if ($value -ne $expected) { $errors.Add("Equation sequence in group $group expected $expected, got $value.") }
+            $groups[$group] = $value
         }
     }
     foreach ($bookmarkName in $referenceTargets) {
@@ -2285,7 +2396,9 @@ function Get-ValidationReport {
         if ($PartialManifest) { $warnings.Add("$message They are outside this partial manifest.") } else { $errors.Add($message) }
     }
     if ($plainText -match 'Error! Reference source not found') { $errors.Add('Word reports a missing reference source.') }
-    if ($script:Document.OMaths.Count -gt 0) { $errors.Add("Found $($script:Document.OMaths.Count) Word built-in equation object(s); MathType is required.") }
+    $expectedOmml = if ($null -ne $Manifest) { [int]$Manifest.expected_remaining_omml } else { $ExpectedRemainingOmml }
+    if ($script:Document.OMaths.Count -ne $expectedOmml) { $errors.Add("Expected $expectedOmml unselected Word built-in equation object(s); found $($script:Document.OMaths.Count).") }
+    if ($expectedOmml -gt 0) { $warnings.Add("$expectedOmml unselected Word equation(s) intentionally remain; this is a local conversion.") }
 
     if ($null -ne $Manifest) {
         $expectedObjects = @($Manifest.equations).Count
@@ -2323,6 +2436,8 @@ function Get-ValidationReport {
             native_number_fields = $numberFields.Count
             native_reference_fields = $referenceTargets.Count
         }
+        numbering_mode = $mode
+        equation_labels = $labels
         equation_numbers = $numberValues
         reference_bookmarks = $referenceTargets
         errors = @($errors)
@@ -2366,9 +2481,9 @@ function Invoke-Update {
 }
 
 function Invoke-FormatNative {
+    param([switch]$Probe)
     # Internal carrier worker; the public Python/MCP operation validates and publishes the final package.
-    $jobPath = Resolve-ExistingFile -Path $ManifestPath -Label 'ManifestPath'
-    $job = Get-Content -Raw -LiteralPath $jobPath | ConvertFrom-Json
+    $jobPath = if (-not $Probe) { Resolve-ExistingFile -Path $ManifestPath -Label 'ManifestPath' } else { '--probe' }
     $roots = @()
     foreach ($base in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
         if ($base) { $roots += Join-Path $base 'MathType' }
@@ -2394,16 +2509,25 @@ function Invoke-FormatNative {
     }
     $compiler = Join-Path $env:SystemRoot "Microsoft.NET\$framework\v4.0.30319\csc.exe"
     if (-not (Test-Path -LiteralPath $compiler)) { throw 'The .NET Framework C# compiler is required for the native-size worker.' }
-    $worker = Join-Path ([IO.Path]::GetDirectoryName($jobPath)) 'MathTypeNativeWorker.exe'
-    $source = Join-Path $PSScriptRoot 'MathTypeNativeWorker.cs'
-    $messages = & $compiler /nologo /target:exe "/platform:$platform" "/out:$worker" /r:Microsoft.CSharp.dll /r:System.Core.dll /r:System.Xml.Linq.dll /r:System.Web.Extensions.dll $source 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "Native worker compilation failed: $messages" }
-    Write-Log -Level INFO -Message "Using installed MathType SDK ($platform) in $root."
-    $resultLines = @(& $worker $jobPath $root $script:OfficeJournalPath)
-    $workerExit = $LASTEXITCODE
-    if ($resultLines.Count -eq 0) { throw "Native-size worker returned no JSON (exit $workerExit)." }
-    Write-JsonResult ($resultLines[-1] | ConvertFrom-Json)
-    if ($workerExit -ne 0) { exit $workerExit }
+    $workerDirectory = if ($Probe) { Join-Path ([IO.Path]::GetTempPath()) ('mathtype-probe-' + [Guid]::NewGuid().ToString('N')) } else { [IO.Path]::GetDirectoryName($jobPath) }
+    if ($Probe) { $null = New-Item -ItemType Directory -Path $workerDirectory }
+    $worker = Join-Path $workerDirectory 'MathTypeNativeWorker.exe'
+    try {
+        $source = Join-Path $PSScriptRoot 'MathTypeNativeWorker.cs'
+        $messages = & $compiler /nologo /target:exe "/platform:$platform" "/out:$worker" /r:Microsoft.CSharp.dll /r:System.Core.dll /r:System.Xml.Linq.dll /r:System.Web.Extensions.dll $source 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "Native worker compilation failed: $messages" }
+        Write-Log -Level INFO -Message "Using installed MathType SDK ($platform) in $root."
+        $resultLines = @(& $worker $jobPath $root $script:OfficeJournalPath)
+        $workerExit = $LASTEXITCODE
+        if ($resultLines.Count -eq 0) { throw "Native-size worker returned no JSON (exit $workerExit)." }
+        Write-JsonResult ($resultLines[-1] | ConvertFrom-Json)
+        if ($workerExit -ne 0) { exit $workerExit }
+    } finally {
+        if ($Probe) {
+            Remove-Item -LiteralPath $worker -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $workerDirectory -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 function Invoke-Cleanup {
@@ -2414,7 +2538,7 @@ function Invoke-Cleanup {
 }
 
 try {
-    if (@('render', 'render-pptx', 'configure-defaults', 'format-native') -contains $Action) { Enter-BridgeLock }
+    if (@('render', 'render-pptx', 'configure-defaults', 'format-native', 'probe-native-format') -contains $Action) { Enter-BridgeLock }
     switch ($Action) {
         'probe' { Invoke-Probe }
         'probe-pptx' { Invoke-Probe -PowerPointRequired }
@@ -2429,6 +2553,7 @@ try {
         'validate-pptx' { Invoke-ValidatePptx }
         'cleanup' { Invoke-Cleanup }
         'format-native' { Invoke-FormatNative }
+        'probe-native-format' { Invoke-FormatNative -Probe }
     }
 }
 catch {

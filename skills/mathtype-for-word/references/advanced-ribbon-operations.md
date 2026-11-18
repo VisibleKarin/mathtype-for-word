@@ -9,10 +9,10 @@ The MathType Word ribbon exposes more commands than the deterministic render wor
 | Insert Inline Equation | Manifest equation with `layout: inline` | Supported; Toggle TeX creates `Equation.DSMT4`. |
 | Insert Display Equation | Manifest equation with `layout: display`, `numbered: false` | Supported. |
 | Insert Right-Numbered Display Equation | Manifest display with `numbered: true` | Supported; uses MathType native number fields plus center/right tab stops. |
-| Insert Equation Number | Render pipeline | Supported through `MTCommand_InsertEqnNum`, then normalized to `(n)`. |
+| Insert Equation Number | Render pipeline | Supported through `MTCommand_InsertEqnNum`; normalize to `(n)` only in simple mode. |
 | Insert Equation Reference | Manifest reference | Supported through `MTCommand_InsertEqnRef` and `MTPlaceRef`. |
 | Update Equation Numbers | `update_mathtype_word_fields` | Supported; update then validate. |
-| Insert Next Equation Chapter / Section | Verified opt-in native-numbering test | `MTCommand_InsertNextChapter` / `MTCommand_InsertNextSection`; see [native numbering](numbering-and-references.md#verified-chapter-and-section-test). The general renderer still enforces simple numbers. |
+| Insert Next Equation Chapter / Section | Render manifest `break_before` | `MTCommand_InsertNextChapter` / `MTCommand_InsertNextSection`; see [native numbering](numbering-and-references.md#verified-chapter-and-section-test). Render/validate/update support chapter and section profiles. |
 | Toggle TeX | Render pipeline | Supported for one-line MathType-compatible TeX. |
 | Format Equation Numbers | Packaged/default profile and field normalization | Supported for processed documents. Do not drive the localized dialog with simulated keystrokes. |
 | Previous/Next Equation browsing | Word UI only | Read/navigation action. Use only in an interactive session when the user asks to inspect equations manually. |

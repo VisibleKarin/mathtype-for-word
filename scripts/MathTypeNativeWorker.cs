@@ -15,6 +15,7 @@ public static class MathTypeNativeWorker {
     const string Dll = "MT6.dll";
     [StructLayout(LayoutKind.Sequential)] public struct Dims { public int baseline, left, top, right, bottom; }
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr LoadLibrary(string path);
+    [DllImport("kernel32.dll", CharSet=CharSet.Ansi, ExactSpelling=true)] static extern IntPtr GetProcAddress(IntPtr module, string name);
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool SetDllDirectory(string path);
     [DllImport(Dll)] static extern int MTAPIConnect(short flags, short timeout);
     [DllImport(Dll)] static extern int MTAPIDisconnect();
@@ -136,24 +137,89 @@ public static class MathTypeNativeWorker {
     static void Write(string folder, int index, string suffix, string value) {
         File.WriteAllText(Path.Combine(folder, index + "-" + suffix), value, Utf8);
     }
+    static Dictionary<string, object> BodySize(dynamic doc, int equationIndex) {
+        dynamic shape = Shape(doc, equationIndex);
+        int anchor = (int)shape.Range.Start;
+        var candidates = new List<Dictionary<string, object>>();
+        // Order cheap paragraph bounds first; do not inspect every character in a long manuscript.
+        for (int k=1; k<=doc.Paragraphs.Count; k++) {
+            dynamic bounds = doc.Paragraphs[k].Range;
+            int distance = Math.Min(Math.Abs((int)bounds.Start-anchor), Math.Abs((int)bounds.End-anchor));
+            candidates.Add(new Dictionary<string, object> {{"paragraph",k}, {"distance",distance}});
+        }
+        Dictionary<string, object> chosen = null;
+        foreach (var candidate in candidates.OrderBy(x => (int)x["distance"])) {
+            if (chosen != null && (int)candidate["distance"] > (int)chosen["distance"]) break;
+            int k = (int)candidate["paragraph"];
+            dynamic paragraph = doc.Paragraphs[k];
+            dynamic range = paragraph.Range;
+            string text = (string)range.Text;
+            string style = (string)range.Style.NameLocal;
+            if ((int)paragraph.OutlineLevel != 10 || (int)range.InlineShapes.Count != 0 ||
+                (int)range.OMaths.Count != 0 || (int)range.Fields.Count != 0 ||
+                System.Text.RegularExpressions.Regex.IsMatch(style, @"(?i)heading|title|caption|标题|题注") ||
+                !text.Any(char.IsLetter)) continue;
+            var sizes = new Dictionary<double, int>();
+            for (int c=1; c<=range.Characters.Count; c++) {
+                dynamic character = range.Characters[c];
+                string value = (string)character.Text;
+                if (string.IsNullOrWhiteSpace(value) || !value.Any(char.IsLetterOrDigit) ||
+                    (int)character.Font.Superscript != 0 || (int)character.Font.Subscript != 0) continue;
+                double size = (double)character.Font.Size;
+                if (size >= 1 && size <= 127) sizes[size] = sizes.ContainsKey(size) ? sizes[size]+1 : 1;
+            }
+            var ranked = sizes.OrderByDescending(x => x.Value).ToArray();
+            if (ranked.Length == 0) continue;
+            bool ambiguous = ranked.Length > 1 && ranked[0].Value == ranked[1].Value;
+            if (ambiguous || (chosen != null && (double)chosen["full_size_pt"] != ranked[0].Key))
+                throw new InvalidOperationException("Nearby body sizes are ambiguous; specify full_size_pt explicitly.");
+            candidate["full_size_pt"] = ranked[0].Key;
+            candidate["ambiguous"] = false;
+            candidate["paragraph_style"] = style;
+            candidate["basis"] = "nearest plain body paragraph; actual nonscript character Font.Size, including direct formatting";
+            chosen = candidate;
+        }
+        if (chosen == null) throw new InvalidOperationException("Cannot infer nearby body size; specify full_size_pt explicitly.");
+        return chosen;
+    }
     [STAThread] public static int Main(string[] args) {
         dynamic word = null, doc = null;
         bool connected = false, owned = false;
+        string stage = "load-sdk", sdkPath = "";
         var serializer = new JavaScriptSerializer();
         try {
+            string root = args[1], journal = args[2];
+            string dll = Path.Combine(root, "System", Dll);
+            sdkPath = dll;
+            string blank = Path.Combine(root, "Office Support", "BlankEqn.doc");
+            if (!File.Exists(dll) || !File.Exists(blank)) throw new FileNotFoundException("MathType SDK or blank equation template is missing.");
+            if (!SetDllDirectory(Path.GetDirectoryName(dll))) throw new InvalidOperationException("Cannot set the SDK dependency directory.");
+            IntPtr module = LoadLibrary(dll);
+            if (module == IntPtr.Zero)
+                throw new InvalidOperationException("Cannot load the installed MathType SDK: " + Marshal.GetLastWin32Error());
+            stage = "check-sdk-exports";
+            foreach (string entry in new [] {"MTAPIConnect", "MTAPIDisconnect", "MTCloseOleObject", "MTSetEqnFromLangBytes",
+                     "MTGetPrefsFromClipboard", "MTXFormReset", "MTXFormSetPrefs", "MTXFormEqn", "MTXFormGetStatus"})
+                if (GetProcAddress(module, entry) == IntPtr.Zero) throw new MissingMethodException("Installed SDK lacks " + entry);
+            stage = "connect-sdk";
+            Check(MTAPIConnect(0, 15), "connect MathType SDK");
+            connected = true;
+            if (args[0] == "--probe") {
+                Console.WriteLine(serializer.Serialize(new Dictionary<string, object> {
+                    {"ok", true}, {"native_formatting_ready", true}, {"sdk_path", dll},
+                    {"worker_architecture", IntPtr.Size == 4 ? "x86" : "x64"}, {"sdk_exports_verified", true},
+                    {"sdk_connection_verified", true}, {"word_document_opened", false},
+                    {"legacy_vba_format_attempted", false}}));
+                return 0;
+            }
+            stage = "validate-carrier-job";
             var job = serializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(args[0], Encoding.UTF8));
-            string root = args[1], journal = args[2], folder = (string)job["work_dir"];
+            string folder = (string)job["work_dir"];
             string input = Path.GetFullPath((string)job["input_path"]), output = Path.GetFullPath((string)job["output_path"]);
             if (string.Equals(input, output, StringComparison.OrdinalIgnoreCase) || File.Exists(output) ||
                 !string.Equals(Path.GetDirectoryName(output), Path.GetFullPath(folder), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Native worker output must be a new file in its private work directory.");
-            string dll = Path.Combine(root, "System", Dll);
-            string blank = Path.Combine(root, "Office Support", "BlankEqn.doc");
-            if (!File.Exists(dll) || !File.Exists(blank)) throw new FileNotFoundException("MathType SDK or blank equation template is missing.");
-            if (!SetDllDirectory(Path.GetDirectoryName(dll)) || LoadLibrary(dll) == IntPtr.Zero)
-                throw new InvalidOperationException("Cannot load the installed MathType SDK: " + Marshal.GetLastWin32Error());
-            Check(MTAPIConnect(0, 15), "connect MathType SDK");
-            connected = true;
+            stage = "open-isolated-word";
             var before = Process.GetProcessesByName("WINWORD").Select(p => p.Id).ToArray();
             word = Activator.CreateInstance(Type.GetTypeFromProgID("Word.Application"));
             var launched = Process.GetProcessesByName("WINWORD").Where(p => !before.Contains(p.Id)).ToArray();
@@ -168,9 +234,21 @@ public static class MathTypeNativeWorker {
             word.DisplayAlerts = 0;
             word.AutomationSecurity = 3;
             doc = word.Documents.Open((string)job["input_path"], false, true, false);
+            // Resolve all body sizes before inserting any carrier objects/template styles.
+            var chosenSizes = new Dictionary<int, double>();
             foreach (Dictionary<string, object> op in (IEnumerable)job["operations"]) {
                 int index = Convert.ToInt32(op["index"]);
-                double size = Convert.ToDouble(op["full_size_pt"], CultureInfo.InvariantCulture);
+                if (Convert.ToString(op["full_size_pt"], CultureInfo.InvariantCulture) == "match_context") {
+                    stage = "resolve-body-size-" + index;
+                    var evidence = BodySize(doc, index);
+                    chosenSizes[index] = (double)evidence["full_size_pt"];
+                    Write(folder, index, "target.json", serializer.Serialize(evidence));
+                } else chosenSizes[index] = Convert.ToDouble(op["full_size_pt"], CultureInfo.InvariantCulture);
+            }
+            foreach (Dictionary<string, object> op in (IEnumerable)job["operations"]) {
+                int index = Convert.ToInt32(op["index"]);
+                stage = "format-equation-" + index;
+                double size = chosenSizes[index];
                 Console.Error.WriteLine("[INFO] Reading equation #" + index);
                 dynamic shape = Shape(doc, index);
                 Write(folder, index, "before.mml", ReadMathML(shape));
@@ -201,7 +279,9 @@ public static class MathTypeNativeWorker {
                 replacement.ScaleHeight = 100;
                 Console.Error.WriteLine("[INFO] Formatted equation #" + index);
             }
+            stage = "save-carrier";
             doc.SaveAs2((string)job["output_path"], 16);
+            stage = "reopen-and-readback";
             doc.Close(0);
             doc = null;
             doc = word.Documents.Open((string)job["output_path"], false, true, false);
@@ -215,7 +295,9 @@ public static class MathTypeNativeWorker {
             return 0;
         } catch (Exception ex) {
             Console.Error.WriteLine(ex.ToString());
-            Console.WriteLine(serializer.Serialize(new Dictionary<string, object> {{"ok", false}, {"action", "format-native"}, {"error", ex.GetType().Name + ": " + ex.Message}}));
+            Console.WriteLine(serializer.Serialize(new Dictionary<string, object> {{"ok", false}, {"action", "format-native"},
+                {"stage", stage}, {"sdk_path", sdkPath}, {"legacy_vba_format_attempted", false},
+                {"error", ex.GetType().Name + ": " + ex.Message}}));
             return 1;
         } finally {
             if (doc != null) try { doc.Close(0); } catch {}

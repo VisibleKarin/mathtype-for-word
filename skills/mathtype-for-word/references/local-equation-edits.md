@@ -25,11 +25,21 @@ Write a local edit plan (different from the marker-render manifest):
 }
 ```
 
-The size above is an example, not a default. Choose it from the user's/template's body style or explicit request and explain the choice. Avoid guessing from headings, captions, an equation's font size or mixed-size text. Automatic body-style inference is not implemented. `part` defaults to `word/document.xml`. Hashes are required and stale plans fail before publication. Each target occurs once.
+The size above is an example, not a default. Choose it from the user's/template's body style or explicit request and explain the choice. Avoid guessing from headings, captions, an equation's font size or mixed-size text. For automatic matching, use `full_size_pt: "match_context"`: the worker reads actual nonscript characters of the nearest eligible plain body paragraph, including direct formatting; it excludes headings, equations and fields and refuses an ambiguous size. The selected paragraph and basis are returned. It does not change the Normal/body style itself. `part` defaults to `word/document.xml`. Hashes are required and stale plans fail before publication. Each target occurs once.
 
 ## Internal Full size
 
-Call `format_mathtype_equations(input_path, output_path, manifest_path, overwrite=false)`. Each operation contains exactly `target` and `full_size_pt` (finite numeric pt, 1–127). Output must differ from the source; an existing output requires explicit overwrite authorization.
+### First use and SDK preflight
+
+For an internal-size task, call `probe_mathtype_word` with `check_native_formatting: true`. In addition to the ordinary Word checks, this compiles a helper matching the installed SDK architecture, loads the installed MT6.dll with its dependency directory, checks the required exported functions, and actually connects/disconnects the SDK. The native sub-probe opens no Word document and does not use the clipboard. Require `native_formatting.ok: true` before continuing. A successful connection does not replace the saved-equation/content/size validation below.
+
+Use `format_mathtype_equations` as the initial formatting route. Its worker performs the same SDK checks before opening its private Word carrier, so a caller that omits the optional probe still does not try the legacy VBA format route. Ordinary equation creation, number insertion and references continue to use their working MathType Word commands; they do not require the optional SDK formatting preflight.
+
+The historical auxiliary route `Word -> MTFormatEquations.DoFormatEquations -> MathPage.WLL / MTInitAPI` failed on the tested MathType 7.8.2 host (WLL discovery, then -9999 initialization after a DLL-path adjustment). The root cause was not isolated; do not describe it as a proven bitness defect or as failure of the standard renderer. Do not reproduce that route first, change global defaults, or repeatedly adjust/reinstall add-ins to set Full size. The native worker uses a separate process matched to the SDK's PE architecture and sets its dependency directory explicitly.
+
+Native failures include `stage`, `sdk_path` and `legacy_vba_format_attempted: false`, distinguishing load/export/connection, Word startup, equation formatting and saved readback failures. Missing SDK/template/compiler errors are reported by the bridge before a document is opened. Report the actual failed check; do not silently switch to the known-failing auxiliary macro path. Diagnose legacy VBA initialization separately only when that path is specifically requested.
+
+Call `format_mathtype_equations(input_path, output_path, manifest_path, overwrite=false)`. Each operation contains exactly `target` and `full_size_pt` (finite numeric pt, 1–127, or `"match_context"`). Output must differ from the source; an existing output requires explicit overwrite authorization.
 
 The worker discovers the installed MathType SDK/template, compiles its own helper for the SDK's x86/x64 architecture with the installed .NET Framework compiler, and opens a private hidden Word carrier. It reads the source preferences, changes only Full, transforms MTEF to MTEF without setting a translator, and writes the result to a verified empty native MathType object. Writing into an existing nonempty object is prohibited because native setters can append content while returning success.
 
@@ -63,7 +73,7 @@ Generate and validate a small donor DOCX through the ordinary marker workflow. S
 
 Replacement is package-only and opens no Office session. It copies only the selected OLE data, matching VML preview, geometry and run baseline. It preserves the source's surrounding text, soft/hard breaks, comments, styles, bookmarks, native number/reference fields and relationship targets. Donor paragraph formatting and chapter-counter resets are not imported. Saved MTEF must match the donor; mathematical correctness and donor typography must be reviewed before this call. This is object replacement, not a claim of general editing within an unchanged OLE identity.
 
-Neither local operation refreshes fields. Existing `(n)`, section/chapter schemes and current values are retained. Use the legacy update/validation tools only if their simple-number contract matches the document; other schemes need an appropriate field-update workflow. Adding/removing/reordering numbers or importing donor references is not implemented by local replacement.
+Neither local operation refreshes fields. Existing `(n)`, section/chapter schemes and current values are retained. The update/validation tools infer simple/chapter/section/chapter-section native schemes by default; pass `numbering_mode` to require a particular scheme. Adding/removing/reordering numbers or importing donor references is not implemented by local replacement.
 
 ## CLI and limits
 

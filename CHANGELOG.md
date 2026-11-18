@@ -14,16 +14,20 @@ Initial personal fork version, based on upstream 1.4.3; its version numbering is
 - Internal Full-size formatting for selected main-document inline equations using the installed SDK, an architecture-matched .NET worker, and a private carrier. Saved readback verifies Full and other preferences; MathML tree comparison catches structural changes and accidental appends.
 - Package-only replacement from a reviewed donor: copy selected native data, matching preview, geometry and baseline, preserving source paragraphs, native fields, comments, bookmarks, styles and unselected parts. Stale plans, shared parts and unsupported containers are refused; output publishes atomically.
 - Three MCP tools and a local CLI, synthetic unit tests and a reproducible opt-in Word integration.
+- Native chapter/section numbering in the normal MCP renderer, validator and field updater, with explicit equation boundaries retained across batches.
+- Hash-checked marking of selected complete OMML objects, an explicit expected count for unselected OMML, and contextual Full size from actual body characters including direct formatting.
+- First-use native SDK preflight and local grid/baseline/tab/continuation guidance based on the supplied Word examples.
 
 ### Changed
 
-- Treat paragraph/definition wording, language, body size and numbering schemes as user/template choices. Keep ordinary Word variables as text when appropriate. Clarify the marker renderer's separate-paragraph/simple-number limitations.
+- Treat paragraph/definition wording, language, body size and numbering schemes as user/template choices. Prefer ordinary Word variables for simple inline math; retain MathType displays and existing mixed layouts. Compute new display tabs in points from usable width.
+- Maintain a concise English/Chinese README describing this fork, its implementation boundaries and Codex assistance.
 - Route installation and issue links to this fork while retaining upstream authorship/license and history. Rebuild portable packages.
 
 ### Validation and limits
 
 - Live tested Word 16.0, MathType 7.8.2.441, x86 SDK: saved 10/10.5/11/12 pt, repeated formatting, six native objects with three native numbers/two references, mixed soft-break/comment paragraph and local replacement. See `tests/TEST-REPORT.md`.
-- x64 routing is implemented but not live tested. Floating objects, broad OMML conversion, general same-identity structural editing, alternate numbering insertion and PowerPoint internal-size formatting remain separate work. Existing local numbering is preserved, not rebuilt.
+- x64 routing is implemented but not live tested. Floating objects, automatic translation of arbitrary OMML, general same-identity structural editing, arbitrary chapter/section starting values and PowerPoint internal-size formatting remain separate work. Existing local numbering is preserved, not rebuilt.
 
 ## Upstream history
 

@@ -59,9 +59,10 @@ TOOLS: list[dict[str, Any]] = [
         "name": "probe_mathtype_word",
         "description": (
             "Check Windows, Microsoft Word COM, MathType 7, the Word add-in template, "
-            "and Equation.DSMT4 registration. This is read-only."
+            "and Equation.DSMT4 registration. Set check_native_formatting for internal Full-size work: also "
+            "verify the architecture-matched SDK helper, exports and actual SDK connection before editing a document."
         ),
-        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        "inputSchema": {"type": "object", "properties": {"check_native_formatting": {"type": "boolean", "default": False}}, "additionalProperties": False},
         "annotations": {
             "title": "Probe MathType and Word",
             "readOnlyHint": True,
@@ -90,8 +91,8 @@ TOOLS: list[dict[str, Any]] = [
         "description": (
             "Persist the skill default: simple equation numbers (1), (2), ...; no chapter "
             "or section component; whole-document application; automatic field updates; first-number "
-            "warning enabled; reference warning disabled. The bridge enforces this format on every "
-            "processed document and updates the matching MathType warning preferences for the user."
+            "warning enabled; reference warning disabled. Explicit render manifests may select chapter/section "
+            "formats instead. This tool updates the matching MathType warning preferences for the user."
         ),
         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
         "annotations": {
@@ -106,7 +107,7 @@ TOOLS: list[dict[str, Any]] = [
         "name": "render_mathtype_word_document",
         "description": (
             "Replace manifest markers in a DOCX with genuine Equation.DSMT4 MathType OLE equations. "
-            "Numbered displays use MathType-native MTPlaceRef/SEQ fields in (1) format. References use "
+            "Numbered displays use MathType-native MTPlaceRef/SEQ fields. Manifest numbering selects simple, chapter, section, chapter_section or preserve; equation break_before inserts native next-chapter/section breaks. References use "
             "MathType's MTReference placeholder and GOTOBUTTON/REF pipeline, never Word numbered lists. "
             "Manifests larger than batch_size render in fresh Word sessions with checkpoints; a failed or "
             "interrupted job resumes when called again with the same paths. The output is published only "
@@ -169,7 +170,8 @@ TOOLS: list[dict[str, Any]] = [
             "Open a DOCX read-only and list the paragraphs that hold plain-text mathematics: Greek letters, "
             "operators, Unicode or Word sub/superscripts, TeX-like text, function calls, typed equation references "
             "and Word built-in equations. Writes a JSON candidates file with Word's paragraph numbers, the exact "
-            "paragraph text and these signals. Decide each span yourself, then call mark_mathtype_document."
+            "paragraph text, source SHA-256 and one-based word_equation_objects (omml_index). Review the math "
+            "and TeX yourself, then call mark_mathtype_document."
         ),
         "inputSchema": {
             "type": "object",
@@ -196,7 +198,8 @@ TOOLS: list[dict[str, Any]] = [
             "render_mathtype_word_document; the source is opened read-only. marks_path is a JSON file "
             '{"schema_version": 1, "marks": [{"paragraph": n, "text": "exact span", "occurrence": 1, '
             '"marker": "{{MATH:id}}"}]} using paragraph numbers and text from scan_mathtype_candidates. '
-            "Every span must be found exactly as given, or nothing is saved."
+            "For a complete Word equation use a mark {omml_index: n, marker: '{{MATH:id}}'} and top-level "
+            "source_sha256 from the scan instead of paragraph/text. Every target must match, or nothing is saved."
         ),
         "inputSchema": {
             "type": "object",
@@ -220,15 +223,17 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "validate_mathtype_word_document",
         "description": (
-            "Open a DOCX read-only and verify genuine Equation.DSMT4 objects, simple MathType-native "
+            "Open a DOCX read-only and verify genuine Equation.DSMT4 objects, MathType-native "
             "number fields, native references and target bookmarks, sequential numbering, resolved "
-            "markers, absence of Word built-in OMath equations, and TeX that MathType left untranslated "
+            "markers, the explicitly expected remaining OMath count (default zero), and TeX that MathType left untranslated "
             "(red text) or drew as a diamond. render_mathtype_word_document already returns this report "
             "for its output; call this tool to re-check a document changed later."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
+                "numbering_mode": {"type": "string", "enum": ["auto", "simple", "chapter", "section", "chapter_section"], "default": "auto"},
+                "expected_remaining_omml": {"type": "integer", "minimum": 0, "default": 0, "description": "Explicit unselected OMML count for a local conversion; a supplied manifest takes precedence."},
                 "document_path": {"type": "string", "description": "Absolute path to the DOCX."},
                 "manifest_path": {"type": "string", "description": "Optional absolute path to the render manifest."},
                 "partial_manifest": {
@@ -293,6 +298,8 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
+                "numbering_mode": {"type": "string", "enum": ["auto", "simple", "chapter", "section", "chapter_section"], "default": "auto"},
+                "expected_remaining_omml": {"type": "integer", "minimum": 0, "default": 0, "description": "Expected unselected OMML count when updating a locally converted document."},
                 "input_path": {"type": "string"},
                 "output_path": {"type": "string"},
                 "overwrite": {"type": "boolean", "default": False},
@@ -367,6 +374,7 @@ for _name, _description, _properties, _required, _read_only in (
      {"document_path": {"type": "string"}}, ["document_path"], True),
     ("format_mathtype_equations",
      "Set selected existing DOCX equations' internal Full size using an installed MathType SDK and a private carrier. "
+     "Plan full_size_pt accepts numeric pt or match_context for nearby actual body characters, including direct formatting. "
      "The local edit plan requires source/target fingerprints and explicit full_size_pt per operation. Reopen and read "
      "back Full size, compare MathML trees and preserve other preferences; publish only selected OLE/preview/geometry/"
      "baseline changes. Main-document inline objects only; clipboard is replaced. Never edits global defaults.",
@@ -402,6 +410,21 @@ def _local_equations(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
                                                arguments["manifest_path"], bool(arguments.get("overwrite")), bridge=_invoke_bridge)
     except Exception as exc:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _probe_word(arguments: dict[str, Any]) -> dict[str, Any]:
+    if arguments.get("check_native_formatting"):
+        refusal = _refuse_during_render_job("format-native")
+        if refusal:
+            return refusal
+    result = _invoke_bridge("probe", {})
+    if result.get("ok") and arguments.get("check_native_formatting"):
+        native = _invoke_bridge("probe-native-format", {})
+        result["native_formatting"] = native
+        result["ok"] = bool(native.get("ok"))
+        if not result["ok"]:
+            result["error"] = "Native formatting preflight failed: " + native.get("error", "unknown failure")
+    return result
 
 
 def _log(message: str) -> None:
@@ -829,6 +852,8 @@ def _invoke_bridge(action: str, arguments: dict[str, Any], timeout: int | None =
         "validation_manifest_path": "-ValidationManifestPath",
         "candidates_path": "-OutputPath",
         "marks_path": "-MarksPath",
+        "numbering_mode": "-NumberingMode",
+        "expected_remaining_omml": "-ExpectedRemainingOmml",
     }
     for key, switch in mapping.items():
         value = arguments.get(key)
@@ -962,7 +987,8 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         "render_mathtype_powerpoint_presentation": "render-pptx",
         "validate_mathtype_powerpoint_presentation": "validate-pptx",
     }
-    local = {"render_mathtype_word_document": _render_word, "get_mathtype_render_status": _render_status}
+    local = {"render_mathtype_word_document": _render_word, "get_mathtype_render_status": _render_status,
+             "probe_mathtype_word": _probe_word}
     for tool_name in ("inspect_mathtype_equations", "format_mathtype_equations", "replace_mathtype_equations"):
         local[tool_name] = lambda args, name=tool_name: _local_equations(name, args)
     if name not in local and name not in actions:

@@ -1,5 +1,35 @@
 # Test report
 
+## README-driven workflow and MCP integration
+
+Date: 2026-11-18. Windows desktop Word 16.0 / MathType 7.8.2.441, installed x86 SDK. The bilingual README and skill were updated from the user's edited README and two supplied Word-layout examples; private examples are not shipped.
+
+`python tests/run-readme-integration.py --output-dir <new folder>` passed using synthetic content and the regular MCP server dispatch/bridge:
+
+- Scanned six real Word OMML equations, selected them by one-based object index and source hash, then marked and converted them without leftover scripts. The source file hash remained unchanged.
+- Rendered native chapter/section numbers across four batches: `(1.1.1)`, `(1.1.2)`, `(1.2.1)`, `(2.1.1)`, `(2.1.2)`, `(2.2.1)`. Saved validation found six MathType objects, six numbers and two live references. Standalone field update inferred the native mode and passed.
+- The regular renderer also passed chapter-only `(1-1)` through `(2-3)` and section-only `(1.1)`, `(1.2)`, `(2.1)`, `(2.2)`, `(2.3)`, `(3.1)` profiles, each with two native references.
+- Automatic Full-size matching read actual 10.5 pt body characters while Normal was 20 pt. Saved Full readback was 10.5 pt, MathML structure/other preferences agreed, and unselected package parts were preserved.
+- A follow-up native check with equal amounts of directly formatted 10/12 pt body text failed at `resolve-body-size-3` with an explicit ambiguity error; no output was published and the input hash was unchanged. The context search inspects nearest eligible paragraphs rather than every character in the manuscript.
+- A separate local conversion changed only one of six OMML equations, explicitly expected five remaining OMML objects, and passed. All five unselected OMML XML subtrees matched the source exactly.
+- Word PDF exports of the chapter/section and section-only outputs were inspected at page size: centered equations, right-tab numbers and prose references were legible without clipping or overlap. New display tab positions were stored in physical units for the actual line width. Poppler emitted the previously observed Symbol/ArialUnicode display-font fallback warnings; inspected symbols remained visible.
+
+The complete non-Office suite passed: **123 tests, 117 passed and 6 environment/opt-in skips**; PowerShell parsing passed. Added unit checks cover native mode/boundary metadata across batch normalization, invalid mode/break/count rejection, contextual-size evidence/readback, and malformed OMML targets.
+
+Scope: TeX for OMML conversion must be reviewed; automatic translation of arbitrary OMML is not provided. Grid/baseline and paragraph-continuation choices are contextual skill guidance, not global style changes. Formula-writing advice and illustrations remain future work. Arbitrary initial chapter/section values and x64 SDK live compatibility remain unverified. These checkout/package changes do not update the installed skill or global MCP configuration.
+
+## First use native formatting preflight
+
+Date: 2026-11-18. Word 16.0 / MathType 7.8.2.441 with installed x86 SDK.
+
+- `probe_mathtype_word(check_native_formatting=true)` passed the ordinary Word checks and the new architecture-matched SDK compilation/load/export/actual-connect checks. The native sub-probe opened no Word document, did not use the clipboard, and reported `legacy_vba_format_attempted: false`.
+- A worker pointed at a missing SDK failed at `stage: load-sdk` before Word startup and without attempting legacy VBA formatting.
+- The actual formatting path repeated the SDK checks and passed the synthetic six-equation integration: selected Full sizes 10/10.5/11/12 pt read back correctly after saving, other preferences/content remained intact, repeated formatting and local replacement passed.
+- Unit coverage checks that the optional probe does not burden ordinary Word-only work, that native initialization failure is visible, and that a failed Word probe does not continue to SDK/legacy formatting.
+- The full non-Office suite ran 120 tests: 114 passed, 6 environment/opt-in skips. PowerShell parsing passed; the actual Word integration above ran separately.
+
+The historical `MTFormatEquations.DoFormatEquations -> MathPage.WLL / MTInitAPI` failure was auxiliary to the original standard renderer; its root cause remains unisolated. The fix routes Full-size work to the already verified native SDK from the outset and adds preflight/diagnostics. It does not claim to repair that legacy VBA path or guarantee compatibility with all Office/MathType versions. Changes remain local until explicitly published; installed skills are not replaced by editing this checkout.
+
 ## Native MathType numbering chapter and section test
 
 Date: 2026-11-18. Word 16.0 / MathType 7.8.2.441; hidden Office sessions, synthetic content only.
@@ -12,7 +42,7 @@ Date: 2026-11-18. Word 16.0 / MathType 7.8.2.441; hidden Office sessions, synthe
 - Native `MTEditEquationSection2` breaks were inserted by MathType. The three numbering modes contain 1, 2 and 4 equation-break fields respectively, while every document retains exactly one Word section.
 - Four one-page native Word PDF exports were rasterized with Poppler and inspected: formula previews, right-aligned numbers and Chinese prose references were legible without clipping or overlap. The packaged DOCX renderer was attempted but its LibreOffice backend is unavailable on this host; native Word export supplied the PDF instead.
 
-This verifies the opt-in test route, not a chapter/section schema for the generic MCP renderer/validator/update tools. Explicit arbitrary starting values and interactive More Breaks / Modify Break dialogs are not covered. See the skill's numbering reference for commands and reproducible usage.
+This earlier test verified the opt-in native route. The generic MCP chapter/section schema is now covered by the README-driven integration above. Explicit arbitrary starting values and interactive More Breaks / Modify Break dialogs are not covered. See the skill's numbering reference for commands and reproducible usage.
 
 ## 0.1.0 personal fork
 
@@ -29,7 +59,7 @@ The new integration (`python tests/run-local-integration.py --work-dir <new abso
 - Word PDF exports of formatted, repeated and replaced outputs were rendered and visually checked. All were one page; equations, adjacent text and native numbers were legible without clipping or collisions. Poppler reported missing display-font fallback warnings for Symbol/ArialUnicode, but the inspected pages retained the visible equation symbols.
 - The dedicated non-Office unit tests cover stale hashes, duplicate targets, shared previews, source/output protection, malformed/cyclic CFB input, namespace differences, incorrect size readback, changed preferences, and duplicate or same-text/different-structure MathML. They use synthetic CFB/OOXML fixtures and pass without Office.
 
-Known boundaries: x64 SDK routing has not been live tested. General same-identity structural edits, floating equations, PowerPoint internal size, broad OMML conversion and alternate-numbering insertion are not covered. Local edits preserve existing fields; they do not regenerate or update them. Legacy render's extra empty-paragraph observation remains a separate issue; local edits do not delete blank paragraphs.
+Known boundaries for this earlier integration: x64 SDK routing has not been live tested. General same-identity structural edits, floating equations and PowerPoint internal size are not covered. Reviewed selected OMML conversion and chapter/section insertion are now tested above. Local edits preserve existing fields; they do not regenerate or update them. Legacy render's extra empty-paragraph observation remains a separate issue; local edits do not delete blank paragraphs.
 
 The final non-Office suite (`tests/run-tests.ps1`) ran 118 tests: 112 passed, 6 skipped; PowerShell parsing passed. The skips were one opt-in legacy live-probe test and five installer scenarios needing a conventional, non-Store PowerShell installation. The new Word integration was run separately and passed with actual Word superscript formatting and complete comment anchors; the Word process set returned to its baseline after the normal shutdown grace period. Skill frontmatter validation and reference-link checks passed. Historical upstream results below refer to their original environments.
 
